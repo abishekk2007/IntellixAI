@@ -41,6 +41,18 @@ enum MessageRole {
   SYSTEM
 }
 
+enum KnowledgeEntityType {
+  PERSON
+  ORGANIZATION
+  PROJECT
+  TASK
+  DATE
+  TECHNOLOGY
+  TOPIC
+  LOCATION
+  DOCUMENT
+}
+
 model User {
   id              String           @id @default(uuid()) @db.Uuid
   email           String           @unique
@@ -54,19 +66,22 @@ model User {
 }
 
 model Workspace {
-  id            String           @id @default(uuid()) @db.Uuid
-  name          String
-  slug          String           @unique
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-  memberships   Membership[]
-  sessions      RefreshSession[]
-  documents     Document[]
-  tasks         Task[]
-  conversations Conversation[]
-  notifications Notification[]
-  usageEvents   UsageEvent[]
-  auditLogs     AuditLog[]
+  id                 String                  @id @default(uuid()) @db.Uuid
+  name               String
+  slug               String                  @unique
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+  memberships        Membership[]
+  sessions           RefreshSession[]
+  documents          Document[]
+  tasks              Task[]
+  conversations      Conversation[]
+  notifications      Notification[]
+  usageEvents        UsageEvent[]
+  auditLogs          AuditLog[]
+  knowledgeEntities  KnowledgeEntity[]
+  knowledgeSources   KnowledgeEntitySource[]
+  knowledgeRelations KnowledgeRelation[]
 }
 
 model Membership {
@@ -99,28 +114,30 @@ model RefreshSession {
 }
 
 model Document {
-  id             String          @id @default(uuid()) @db.Uuid
-  workspaceId    String          @db.Uuid
-  uploadedById   String          @db.Uuid
-  name           String
-  mimeType       String
-  sizeBytes      Int
-  storageKey     String
-  status         DocumentStatus  @default(UPLOADED)
-  extractedText  String?
-  summary        String?
-  keyPoints      Json?
-  keywords       Json?
-  actionItems    Json?
-  importantDates Json?
-  errorCode      String?
-  errorMessage   String?
-  deletedAt      DateTime?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  chunks         DocumentChunk[]
-  tasks          Task[]
+  id                 String                  @id @default(uuid()) @db.Uuid
+  workspaceId        String                  @db.Uuid
+  uploadedById       String                  @db.Uuid
+  name               String
+  mimeType           String
+  sizeBytes          Int
+  storageKey         String
+  status             DocumentStatus          @default(UPLOADED)
+  extractedText      String?
+  summary            String?
+  keyPoints          Json?
+  keywords           Json?
+  actionItems        Json?
+  importantDates     Json?
+  errorCode          String?
+  errorMessage       String?
+  deletedAt          DateTime?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+  workspace          Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  chunks             DocumentChunk[]
+  tasks              Task[]
+  knowledgeSources   KnowledgeEntitySource[]
+  knowledgeRelations KnowledgeRelation[]
 
   @@index([workspaceId, updatedAt])
   @@index([workspaceId, status])
@@ -128,17 +145,77 @@ model Document {
 }
 
 model DocumentChunk {
-  id          String   @id @default(uuid()) @db.Uuid
-  workspaceId String   @db.Uuid
-  documentId  String   @db.Uuid
-  chunkIndex  Int
-  pageNumber  Int?
-  content     String
-  createdAt   DateTime @default(now())
-  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  id               String                  @id @default(uuid()) @db.Uuid
+  workspaceId      String                  @db.Uuid
+  documentId       String                  @db.Uuid
+  chunkIndex       Int
+  pageNumber       Int?
+  content          String
+  createdAt        DateTime                @default(now())
+  document         Document                @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  knowledgeSources KnowledgeEntitySource[]
 
   @@unique([documentId, chunkIndex])
   @@index([workspaceId, documentId])
+}
+
+model KnowledgeEntity {
+  id                String                  @id @default(uuid()) @db.Uuid
+  workspaceId       String                  @db.Uuid
+  name              String
+  normalized        String
+  type              KnowledgeEntityType
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  workspace         Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sources           KnowledgeEntitySource[]
+  outgoingRelations KnowledgeRelation[]     @relation("KnowledgeRelationSource")
+  incomingRelations KnowledgeRelation[]     @relation("KnowledgeRelationTarget")
+
+  @@unique([workspaceId, normalized, type])
+  @@index([workspaceId])
+  @@index([workspaceId, type])
+  @@index([workspaceId, normalized])
+}
+
+model KnowledgeEntitySource {
+  id          String          @id @default(uuid()) @db.Uuid
+  workspaceId String          @db.Uuid
+  entityId    String          @db.Uuid
+  documentId  String          @db.Uuid
+  chunkId     String?         @db.Uuid
+  excerpt     String?
+  pageNumber  Int?
+  createdAt   DateTime        @default(now())
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  entity      KnowledgeEntity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  document    Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunk       DocumentChunk?  @relation(fields: [chunkId], references: [id], onDelete: SetNull)
+
+  @@unique([entityId, documentId, chunkId])
+  @@index([workspaceId, documentId])
+  @@index([workspaceId, entityId])
+}
+
+model KnowledgeRelation {
+  id             String          @id @default(uuid()) @db.Uuid
+  workspaceId    String          @db.Uuid
+  sourceEntityId String          @db.Uuid
+  targetEntityId String          @db.Uuid
+  type           String
+  confidence     Float           @default(1)
+  documentId     String?         @db.Uuid
+  excerpt        String?
+  createdAt      DateTime        @default(now())
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sourceEntity   KnowledgeEntity @relation("KnowledgeRelationSource", fields: [sourceEntityId], references: [id], onDelete: Cascade)
+  targetEntity   KnowledgeEntity @relation("KnowledgeRelationTarget", fields: [targetEntityId], references: [id], onDelete: Cascade)
+  document       Document?       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, sourceEntityId, targetEntityId, type, documentId])
+  @@index([workspaceId, sourceEntityId])
+  @@index([workspaceId, targetEntityId])
+  @@index([workspaceId, type])
 }
 
 model Task {
