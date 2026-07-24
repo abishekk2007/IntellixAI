@@ -1,0 +1,8 @@
+"use client";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, LoaderCircle } from "lucide-react";
+import { WorkspaceHeader } from "@/components/workspace-header";
+import { api, type TaskRecord } from "@/lib/api";
+
+export default function TasksPage(){const client=useQueryClient();const query=useQuery({queryKey:["tasks"],queryFn:()=>api<TaskRecord[]>("/tasks")});const update=useMutation({mutationFn:({id,status}:{id:string;status:TaskRecord["status"]})=>api(`/tasks/${id}`,{method:"PATCH",body:JSON.stringify({status})}),onSuccess:()=>client.invalidateQueries({queryKey:["tasks"]})});
+ return <><WorkspaceHeader/><main className="product-page"><header className="product-heading"><div><span className="kicker">ACTION CENTER</span><h1>Tasks</h1><p>Confirmed action items from your documents appear here with their source reference.</p></div></header>{query.isLoading?<div className="empty-state"><LoaderCircle className="spin"/></div>:!query.data?.length?<div className="empty-state"><Check/><h2>No tasks yet</h2><p>Open a ready document and confirm the action items you want to create.</p></div>:<section className="task-list">{query.data.map(task=><article key={task.id} className={task.status==="DONE"?"done":""}><button aria-label={`Mark ${task.title} ${task.status==="DONE"?"open":"done"}`} onClick={()=>update.mutate({id:task.id,status:task.status==="DONE"?"TODO":"DONE"})}>{task.status==="DONE"&&<Check size={13}/>}</button><div><strong>{task.title}</strong><p>{task.description}</p><small>{task.priority}{task.dueDate?` · Due ${new Date(task.dueDate).toLocaleDateString()}`:""}{task.sourceDocumentId?" · From document":""}</small></div></article>)}</section>}</main></>}
