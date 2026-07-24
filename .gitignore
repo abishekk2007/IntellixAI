@@ -13,6 +13,7 @@ node_modules/
 
 # Next.js
 .next/
+.playwright-cli/
 out/
 
 # Builds

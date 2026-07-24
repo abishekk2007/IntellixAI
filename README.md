@@ -65,6 +65,9 @@ Persist tasks and update dashboard statistics
 ### Frontend
 
 - Responsive Next.js workspace and landing experience
+- Shared authenticated application shell with sidebar, header, mobile drawer, user controls, and route-aware navigation
+- Reusable cards, page headers, badges, loading states, error states, and empty states
+- Responsive breakpoints verified for desktop, tablet, and mobile layouts
 - Register and login integration
 - Zustand authentication state
 - Central API client with `credentials: "include"`
@@ -196,7 +199,7 @@ Required configuration:
 | `JWT_REFRESH_SECRET` | Refresh-token HMAC secret, minimum 32 characters |
 | `GEMINI_API_KEY` | Optional for startup; required for AI analysis and Q&A |
 | `GEMINI_MODEL` | Configurable Gemini model name |
-| `FRONTEND_URL` | Allowed browser origin |
+| `FRONTEND_URLS` | Comma-separated exact browser origins; development also permits localhost ports 3000 and 3001 |
 | `NEXT_PUBLIC_API_URL` | Public Express API base URL |
 | `LOCAL_UPLOAD_DIR` | Local hackathon upload directory |
 | `MAX_UPLOAD_BYTES` | Maximum accepted upload size |
