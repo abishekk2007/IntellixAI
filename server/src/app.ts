@@ -43,7 +43,14 @@ export function createApp() {
   app.use((req, res, next) => { res.locals.requestId = req.header("x-request-id") ?? randomUUID(); res.setHeader("x-request-id", res.locals.requestId); next(); });
   app.use(pinoHttp({ redact: ["req.headers.authorization", "req.headers.cookie", "req.body.password", "req.body.refreshToken"] }));
   app.use(helmet());
-  app.use(cors({ origin: env.FRONTEND_URL, credentials: true, methods: ["GET", "POST", "PATCH", "DELETE"] }));
+  const allowedOrigins = new Set(env.FRONTEND_URLS);
+  app.use(cors({
+    origin: (origin, callback) => callback(null, !origin || allowedOrigins.has(origin)),
+    credentials: true,
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Authorization", "Content-Type", "X-Request-Id"],
+    optionsSuccessStatus: 204,
+  }));
   app.use(express.json({ limit: "1mb" }));
   const health = async (_req: express.Request, res: express.Response, next: express.NextFunction) => {
     try { await prisma.$queryRaw`SELECT 1`; ok(res, { status: "ok", database: "connected" }); }

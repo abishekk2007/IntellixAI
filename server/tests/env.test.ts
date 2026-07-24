@@ -28,4 +28,14 @@ describe("database environment validation", () => {
   it("rejects placeholder production JWT secrets", () => {
     expect(() => readEnv({ ...base, JWT_ACCESS_SECRET: "replace-with-at-least-32-random-characters" })).toThrow("JWT_ACCESS_SECRET");
   });
+
+  it("parses, normalizes and deduplicates explicit production frontend origins", () => {
+    const parsed = readEnv({ ...base, FRONTEND_URL: undefined, FRONTEND_URLS: "https://app.intellix.test, https://admin.intellix.test/,https://app.intellix.test" });
+    expect(parsed.FRONTEND_URLS).toEqual(["https://app.intellix.test", "https://admin.intellix.test"]);
+  });
+
+  it("keeps production origins explicit and rejects URL paths", () => {
+    expect(readEnv(base).FRONTEND_URLS).toEqual(["https://intellix.example"]);
+    expect(() => readEnv({ ...base, FRONTEND_URL: undefined, FRONTEND_URLS: "https://app.intellix.test/path" })).toThrow("FRONTEND_URLS");
+  });
 });
