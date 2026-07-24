@@ -1,0 +1,16 @@
+import jwt from "jsonwebtoken";
+import request from "supertest";
+import { describe, expect, it, vi } from "vitest";
+
+const mocks=vi.hoisted(()=>({$queryRaw:vi.fn(),membership:{findUnique:vi.fn()},document:{count:vi.fn(),findMany:vi.fn()},task:{count:vi.fn(),create:vi.fn(),findMany:vi.fn()}}));
+vi.mock("../src/config/prisma.js",()=>({prisma:mocks}));
+import { createApp } from "../src/app.js";
+
+function token(){return jwt.sign({workspaceId:"22222222-2222-4222-8222-222222222222"},process.env.JWT_ACCESS_SECRET!,{subject:"11111111-1111-4111-8111-111111111111"});}
+describe("API security and dashboard",()=>{
+  it("reports database health using the response envelope",async()=>{mocks.$queryRaw.mockResolvedValue([{connected:1}]);const response=await request(createApp()).get("/api/v1/health");expect(response.status).toBe(200);expect(response.body.data).toEqual({status:"ok",database:"connected"});expect(response.body.meta.requestId).toBeTruthy();});
+  it("rejects protected routes without an access token",async()=>{const response=await request(createApp()).get("/api/v1/dashboard/summary");expect(response.status).toBe(401);expect(response.body.error.code).toBe("UNAUTHORIZED");});
+  it("enforces workspace membership",async()=>{mocks.membership.findUnique.mockResolvedValue(null);const response=await request(createApp()).get("/api/v1/dashboard/summary").set("authorization",`Bearer ${token()}`);expect(response.status).toBe(403);expect(response.body.error.code).toBe("WORKSPACE_FORBIDDEN");});
+  it("returns tenant-scoped persisted dashboard statistics",async()=>{mocks.membership.findUnique.mockResolvedValue({id:"membership"});mocks.document.count.mockResolvedValueOnce(4).mockResolvedValueOnce(2).mockResolvedValueOnce(1).mockResolvedValueOnce(1);mocks.task.count.mockResolvedValueOnce(5).mockResolvedValueOnce(3).mockResolvedValueOnce(2);mocks.document.findMany.mockResolvedValue([{id:"doc",name:"Brief",status:"READY"}]);mocks.task.findMany.mockResolvedValue([{id:"task",title:"Review"}]);const response=await request(createApp()).get("/api/v1/dashboard/summary").set("authorization",`Bearer ${token()}`);expect(response.status).toBe(200);expect(response.body.data).toMatchObject({totalDocuments:4,readyDocuments:2,processingDocuments:1,failedDocuments:1,totalTasks:5,pendingTasks:3,completedTasks:2});expect(mocks.document.count).toHaveBeenCalledWith({where:expect.objectContaining({workspaceId:"22222222-2222-4222-8222-222222222222",deletedAt:null})});});
+  it("creates a task inside the authenticated workspace",async()=>{mocks.membership.findUnique.mockResolvedValue({id:"membership"});mocks.task.create.mockImplementation(async({data})=>({id:"task-id",status:"TODO",...data}));const response=await request(createApp()).post("/api/v1/tasks").set("authorization",`Bearer ${token()}`).send({title:"Review brief",priority:"HIGH"});expect(response.status).toBe(201);expect(mocks.task.create).toHaveBeenCalledWith({data:expect.objectContaining({workspaceId:"22222222-2222-4222-8222-222222222222",createdById:"11111111-1111-4111-8111-111111111111",title:"Review brief"})});});
+});

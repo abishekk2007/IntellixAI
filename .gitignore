@@ -1,0 +1,54 @@
+# Environment
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env*
+!.env.example
+
+# Dependencies and package-manager caches
+node_modules/
+.pnpm-store/
+
+# Next.js
+.next/
+out/
+
+# Builds
+dist/
+build/
+server/dist/
+*.tsbuildinfo
+
+# Testing
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Local uploads and processing
+uploads/
+storage/
+temp/
+tmp/
+.test-uploads/
+
+# Prisma local databases
+*.db
+*.db-journal
+
+# Editor and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Certificates and credentials
+*.pem
+*.key
+credentials.json
+service-account*.json
