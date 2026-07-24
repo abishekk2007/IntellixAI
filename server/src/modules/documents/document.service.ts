@@ -9,6 +9,7 @@ import { prisma } from "../../config/prisma.js";
 import { AppError } from "../../shared/http.js";
 import { GeminiProvider, type AIProvider, type ContextChunk, type DocumentAnalysis } from "../ai/provider.js";
 import { TesseractOCRProvider, type OCRProvider } from "../ocr/ocr.js";
+import { KnowledgeGraphService } from "../knowledge/knowledge.service.js";
 
 const allowed = new Map([
   [".pdf", "application/pdf"], [".txt", "text/plain"], [".png", "image/png"], [".jpg", "image/jpeg"], [".jpeg", "image/jpeg"],
@@ -88,14 +89,20 @@ export class DocumentProcessor {
   async process(documentId: string, workspaceId: string) {
     const document = await prisma.document.findFirst({ where: { id: documentId, workspaceId, deletedAt: null } });
     if (!document) throw new AppError(404, "DOCUMENT_NOT_FOUND", "Document not found.");
+    if (["EXTRACTING", "OCR_PROCESSING", "ANALYZING"].includes(document.status)) {
+      throw new AppError(409, "ANALYSIS_IN_PROGRESS", "This document is already being processed.");
+    }
+    const claimed = await prisma.document.updateMany({
+      where: { id: document.id, workspaceId, deletedAt: null, status: document.status },
+      data: { status: "EXTRACTING", errorCode: null, errorMessage: null },
+    });
+    if (!claimed.count) throw new AppError(409, "ANALYSIS_IN_PROGRESS", "This document is already being processed.");
     try {
-      await prisma.document.update({ where: { id: document.id }, data: { status: "EXTRACTING", errorCode: null, errorMessage: null } });
       const extracted = await extract(document.storageKey, document.mimeType, this.ocr, async () => {
         await prisma.document.update({ where: { id: document.id }, data: { status: "OCR_PROCESSING" } });
       });
       if (!extracted.text.trim()) throw new AppError(422, "NO_TEXT_FOUND", "No usable text could be extracted from the document.");
       await prisma.document.update({ where: { id: document.id }, data: { status: "ANALYZING", extractedText: extracted.text } });
-      if (!env.GEMINI_API_KEY) throw new AppError(503, "AI_NOT_CONFIGURED", "Gemini is not configured for this environment.");
       const analysis = await this.ai.analyzeDocument(extracted.text);
       const chunks = splitIntoChunks(extracted.text);
       await prisma.$transaction([
@@ -104,8 +111,10 @@ export class DocumentProcessor {
         prisma.document.update({ where: { id: document.id }, data: analysisData(analysis) }),
         prisma.usageEvent.create({ data: { workspaceId, eventType: "document.analysis" } }),
       ]);
+      await new KnowledgeGraphService().rebuildDocument(document.id, workspaceId, analysis).catch(() => undefined);
     } catch (error) {
       await prisma.document.update({ where: { id: document.id }, data: { status: "FAILED", errorCode: error instanceof AppError ? error.code : "PROCESSING_FAILED", errorMessage: error instanceof AppError ? error.message : "Document processing failed." } });
+      if (error instanceof AppError && error.code.startsWith("AI_")) await new KnowledgeGraphService().rebuildDocument(document.id, workspaceId).catch(() => undefined);
       throw error;
     }
   }

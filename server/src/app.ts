@@ -13,6 +13,7 @@ import { authContext, requireAuth } from "./middleware/auth.js";
 import { login, loginSchema, logout, register, registerSchema, rotateRefreshToken } from "./modules/auth/auth.js";
 import { analysisSchema } from "./modules/ai/provider.js";
 import { answerQuestion, createDocumentProcessor, questionSchema, sanitizeOriginalName, storeUpload } from "./modules/documents/document.service.js";
+import { entityTypes, graphQuestionSchema, graphSearchSchema, KnowledgeGraphService } from "./modules/knowledge/knowledge.service.js";
 import { AppError, errorHandler, notFound, ok } from "./shared/http.js";
 
 const refreshCookie = "intellix_refresh";
@@ -79,7 +80,24 @@ export function createApp() {
   app.get("/api/v1/documents", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const documents = await prisma.document.findMany({ where: { workspaceId: auth.workspaceId, deletedAt: null }, orderBy: { updatedAt: "desc" } }); ok(res, documents.map(publicDocument)); } catch (error) { next(error); } });
   app.get("/api/v1/documents/:documentId", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const document = await prisma.document.findFirst({ where: { id: String(req.params.documentId), workspaceId: auth.workspaceId, deletedAt: null } }); if (!document) throw new AppError(404, "DOCUMENT_NOT_FOUND", "Document not found."); ok(res, publicDocument(document)); } catch (error) { next(error); } });
   app.get("/api/v1/documents/:documentId/status", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const document = await prisma.document.findFirst({ where: { id: String(req.params.documentId), workspaceId: auth.workspaceId, deletedAt: null }, select: { id: true, status: true, errorCode: true, errorMessage: true, updatedAt: true } }); if (!document) throw new AppError(404, "DOCUMENT_NOT_FOUND", "Document not found."); ok(res, document); } catch (error) { next(error); } });
-  app.post("/api/v1/documents/:documentId/analyze", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const document = await prisma.document.findFirst({ where: { id: String(req.params.documentId), workspaceId: auth.workspaceId, deletedAt: null } }); if (!document) throw new AppError(404, "DOCUMENT_NOT_FOUND", "Document not found."); await jobs.enqueue(`document:${document.id}`, () => createDocumentProcessor().process(document.id, auth.workspaceId)); ok(res, { id: document.id, status: "UPLOADED" }, 202); } catch (error) { next(error); } });
+  app.post("/api/v1/documents/:documentId/analyze", requireAuth, async (req, res, next) => { try {
+    const auth = authContext(req);
+    const document = await prisma.document.findFirst({ where: { id: String(req.params.documentId), workspaceId: auth.workspaceId, deletedAt: null } });
+    if (!document) throw new AppError(404, "DOCUMENT_NOT_FOUND", "Document not found.");
+    if (["UPLOADED", "EXTRACTING", "OCR_PROCESSING", "ANALYZING"].includes(document.status)) throw new AppError(409, "ANALYSIS_IN_PROGRESS", "This document is already being processed.");
+    const queued = await prisma.document.updateMany({ where: { id: document.id, workspaceId: auth.workspaceId, deletedAt: null, status: document.status }, data: { status: "UPLOADED", errorCode: null, errorMessage: null } });
+    if (!queued.count) throw new AppError(409, "ANALYSIS_IN_PROGRESS", "This document is already being processed.");
+    try {
+      await jobs.enqueue(`document:${document.id}`, () => createDocumentProcessor().process(document.id, auth.workspaceId));
+    } catch (error) {
+      await prisma.document.updateMany({
+        where: { id: document.id, workspaceId: auth.workspaceId, deletedAt: null, status: "UPLOADED" },
+        data: { status: document.status, errorCode: document.errorCode, errorMessage: document.errorMessage },
+      });
+      throw error;
+    }
+    ok(res, { id: document.id, status: "UPLOADED" }, 202);
+  } catch (error) { next(error); } });
   app.post("/api/v1/documents/:documentId/questions", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const { question } = questionSchema.parse(req.body); ok(res, await answerQuestion(String(req.params.documentId), auth.workspaceId, question)); } catch (error) { next(error); } });
   app.delete("/api/v1/documents/:documentId", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const result = await prisma.document.updateMany({ where: { id: String(req.params.documentId), workspaceId: auth.workspaceId, deletedAt: null }, data: { deletedAt: new Date() } }); if (!result.count) throw new AppError(404, "DOCUMENT_NOT_FOUND", "Document not found."); ok(res, { deleted: true }); } catch (error) { next(error); } });
 
@@ -115,6 +133,13 @@ export function createApp() {
     ]);
     ok(res, { totalDocuments, readyDocuments, processingDocuments, failedDocuments, totalTasks, pendingTasks, completedTasks, recentDocuments, recentTasks });
   } catch (error) { next(error); } });
+
+  app.post("/api/v1/knowledge-graph/rebuild", requireAuth, async (req, res, next) => { try { const auth = authContext(req); ok(res, await new KnowledgeGraphService().rebuildWorkspace(auth.workspaceId), 202); } catch (error) { next(error); } });
+  app.post("/api/v1/documents/:documentId/knowledge-graph/rebuild", requireAuth, async (req, res, next) => { try { const auth = authContext(req); ok(res, await new KnowledgeGraphService().rebuildDocument(String(req.params.documentId), auth.workspaceId), 202); } catch (error) { next(error); } });
+  app.get("/api/v1/knowledge-graph", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const type = z.enum(entityTypes).optional().parse(req.query.type); ok(res, await new KnowledgeGraphService().getGraph(auth.workspaceId, type)); } catch (error) { next(error); } });
+  app.get("/api/v1/knowledge-graph/search", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const input = graphSearchSchema.parse(req.query); ok(res, await new KnowledgeGraphService().search(auth.workspaceId, input.q, input.type)); } catch (error) { next(error); } });
+  app.get("/api/v1/knowledge-graph/entities/:entityId", requireAuth, async (req, res, next) => { try { const auth = authContext(req); ok(res, await new KnowledgeGraphService().getEntity(auth.workspaceId, String(req.params.entityId))); } catch (error) { next(error); } });
+  app.post("/api/v1/knowledge-graph/questions", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const input = graphQuestionSchema.parse(req.body); ok(res, await new KnowledgeGraphService().askQuestion(auth.workspaceId, input.question)); } catch (error) { next(error); } });
 
   app.use(notFound);
   app.use(errorHandler);

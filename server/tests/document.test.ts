@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { analysisSchema, parseModelJson } from "../src/modules/ai/provider.js";
 import { retrieveRelevantChunks, sanitizeOriginalName, splitIntoChunks, validateUpload } from "../src/modules/documents/document.service.js";
@@ -10,4 +11,5 @@ describe("document processing utilities",()=>{
   it("extracts JSON from Gemini markdown fences",()=>{expect(parseModelJson("```json\n{\"summary\":\"ok\"}\n```")).toEqual({summary:"ok"});});
   it("rejects malformed Gemini JSON",()=>{expect(()=>parseModelJson("```json\nnot-json\n```")).toThrow(SyntaxError);});
   it("sanitizes uploaded display names without retaining paths",()=>{expect(sanitizeOriginalName("../../unsafe<script>.txt")).toBe("unsafe_script_.txt");});
+  it("keeps a debounced manual retry and documents link in the failure UI",async()=>{const source=await readFile("components/document-failure-state.tsx","utf8");expect(source).toContain('"Retry analysis"');expect(source).toContain("disabled={retrying}");expect(source).toContain('href="/documents"');});
 });
