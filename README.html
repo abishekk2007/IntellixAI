@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Intellix AI — Round 1 Evaluation</title>
+<style>
+:root{--ink:#182035;--muted:#667085;--brand:#6d4aff;--soft:#f5f3ff;--line:#e4e7ec;--code:#101828}*{box-sizing:border-box}body{margin:0;background:#f8f9fc;color:var(--ink);font:16px/1.65 Inter,Segoe UI,Arial,sans-serif}main{max-width:1080px;margin:32px auto;padding:56px 68px;background:white;border:1px solid var(--line);border-radius:20px;box-shadow:0 18px 60px #18203512}h1{font-size:3rem;margin:.1em 0;color:#3f2aa8}h2{margin-top:2.2em;padding-bottom:.35em;border-bottom:1px solid var(--line)}h3{margin-top:1.7em}blockquote{margin:0 0 2em;padding:14px 20px;border-left:5px solid var(--brand);background:var(--soft);font-size:1.15rem;font-weight:700}a{color:#5936d9}code{padding:.15em .4em;background:#f2f4f7;border-radius:5px}pre{overflow:auto;padding:20px;background:var(--code);color:#e8edff;border-radius:12px}pre code{padding:0;background:none}.table-wrap{overflow:auto;margin:1.25em 0}table{width:100%;border-collapse:collapse}th,td{padding:11px 13px;border:1px solid var(--line);text-align:left;vertical-align:top}th{background:var(--soft)}li{margin:.35em 0}footer{margin-top:50px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:.9rem}@media(max-width:720px){main{margin:0;padding:28px 20px;border:0;border-radius:0}h1{font-size:2.25rem}}
+</style></head><body><main><h1 id="intellix-ai">Intellix AI</h1>
+<blockquote><strong>Where Intelligence Meets Action.</strong></blockquote>
+<p>Intellix AI is a secure, multi-tenant document-intelligence workspace. It transforms uploaded files into structured insights, grounded answers, user-confirmed tasks, and live workspace statistics.</p>
+<h2 id="round-1-evaluation-status">Round 1 evaluation status</h2>
+<p>The core hackathon MVP is implemented and builds successfully. Authentication, Supabase persistence, document upload and extraction, tenant isolation, tasks, and dashboard aggregation have been verified with real API requests.</p>
+<p>Gemini integration is implemented behind a provider abstraction, but a live Gemini analysis and Q&amp;A demonstration still requires a valid <code>GEMINI_API_KEY</code>. Without a key, the application deliberately stores <code>FAILED / AI_NOT_CONFIGURED</code> instead of crashing or leaving a document stuck.</p>
+<div class="table-wrap"><table><thead><tr><th>Area</th><th>Status</th><th>Evaluation note</th></tr></thead><tbody>
+<tr><td>Responsive Next.js interface</td><td>Complete</td><td>Landing, authentication, dashboard, documents, tasks, and workspace pages</td></tr>
+<tr><td>Registration and login</td><td>Complete and verified</td><td>Creates User, Workspace, and OWNER Membership</td></tr>
+<tr><td>JWT and refresh rotation</td><td>Complete and verified</td><td>Short-lived access JWT and opaque, hashed, rotating refresh session</td></tr>
+<tr><td>Supabase PostgreSQL</td><td>Complete and verified</td><td>Prisma migration applied; persisted data survives API restart</td></tr>
+<tr><td>Tenant authorization</td><td>Complete and verified</td><td>Membership checks and workspace-scoped queries</td></tr>
+<tr><td>Document upload</td><td>Complete and verified</td><td>PDF, TXT, PNG, JPG, and JPEG with size, MIME, signature, and filename validation</td></tr>
+<tr><td>Text extraction</td><td>Complete</td><td>TXT and PDF extraction</td></tr>
+<tr><td>Conditional OCR</td><td>Implemented</td><td>Tesseract for images and scanned PDFs; live OCR demo still recommended</td></tr>
+<tr><td>Gemini analysis</td><td>Implemented; key required</td><td>Structured summary, points, keywords, actions, and dates validated with Zod</td></tr>
+<tr><td>Document Q&amp;A</td><td>Implemented; key required</td><td>Keyword-ranked chunks with citation index, optional page, and excerpt</td></tr>
+<tr><td>Confirmed task creation</td><td>Complete</td><td>Tasks are created only when <code>confirmed</code> strictly equals <code>true</code></td></tr>
+<tr><td>Dashboard aggregation</td><td>Complete and verified</td><td>Real tenant-scoped document and task statistics</td></tr>
+<tr><td>Automated quality suite</td><td>Passing</td><td>19 tests, type checks, lint, API build, and web build</td></tr>
+<tr><td>Production deployment</td><td>Under development</td><td>Local storage and in-process jobs remain hackathon adapters</td></tr>
+</tbody></table></div>
+<h2 id="problem-and-objective">Problem and objective</h2>
+<p>Important information is often buried in reports, notes, scans, and images. Intellix provides one workflow to:</p>
+<ol>
+<li>securely upload a document;</li>
+<li>extract or OCR its text;</li>
+<li>generate structured, source-based intelligence;</li>
+<li>ask questions using relevant document chunks;</li>
+<li>approve selected action items before task creation; and</li>
+<li>track persisted results from a workspace dashboard.</li>
+</ol>
+<p>The product keeps human confirmation and workspace ownership at the center of the workflow.</p>
+<h2 id="main-workflow">Main workflow</h2>
+<pre><code class="language-text">Register or log in
+        ↓
+Upload PDF, TXT, PNG, JPG, or JPEG
+        ↓
+Validate → safely store → extract text → OCR when required
+        ↓
+Gemini structured analysis with Zod validation
+        ↓
+Summary + key points + keywords + actions + important dates
+        ↓
+Keyword-ranked document Q&amp;A with source citations
+        ↓
+User selects and confirms action items
+        ↓
+Persist tasks and update dashboard statistics</code></pre>
+<h2 id="features-completed">Features completed</h2>
+<h3 id="frontend">Frontend</h3>
+<ul>
+<li>Responsive Next.js workspace and landing experience</li>
+<li>Register and login integration</li>
+<li>Zustand authentication state</li>
+<li>Central API client with <code>credentials: "include"</code></li>
+<li>One-time access-token refresh and retry protection</li>
+<li>Document upload, list, detail, status polling, analysis display, and retry handling</li>
+<li>Polling stops when a document reaches <code>READY</code> or <code>FAILED</code></li>
+<li>Document question form and citation display</li>
+<li>Explicit action-item selection and confirmation</li>
+<li>Persisted task list and status updates</li>
+<li>Live dashboard summary integration</li>
+<li>Loading, empty, processing, and safe error states</li>
+</ul>
+<h3 id="backend-and-security">Backend and security</h3>
+<ul>
+<li>Express 5 API under <code>/api/v1</code></li>
+<li>Consistent <code>{ data, error, meta }</code> response envelopes</li>
+<li>Database-aware health endpoint</li>
+<li>Request IDs, Helmet, scoped credentialed CORS, and Pino redaction</li>
+<li>Authentication and upload rate limits</li>
+<li>Zod request and environment validation</li>
+<li>Bcrypt password hashing with cost 12</li>
+<li>Short-lived JWT access tokens</li>
+<li>Opaque refresh tokens stored only as HMAC-SHA256 hashes</li>
+<li>Atomic refresh rotation and logout revocation</li>
+<li>HTTP-only refresh cookie with production-aware security settings</li>
+<li>Membership verification on protected routes</li>
+<li>Workspace scoping on documents, tasks, dashboard data, chunks, and audit records</li>
+<li>Soft-delete filtering for documents</li>
+<li>Safe centralized errors without stack traces, credentials, provider errors, or file paths</li>
+</ul>
+<h3 id="document-intelligence">Document intelligence</h3>
+<ul>
+<li>Multipart upload field: <code>file</code></li>
+<li>Maximum upload size controlled by <code>MAX_UPLOAD_BYTES</code></li>
+<li>Extension, MIME, magic-byte/signature, empty-file, and size validation</li>
+<li>Sanitized display names and server-generated storage keys</li>
+<li>Path-traversal protection</li>
+<li>TXT decoding and PDF extraction</li>
+<li>Conditional Tesseract OCR for images and low-text scanned PDFs</li>
+<li>Processing states: <code>UPLOADED</code>, <code>EXTRACTING</code>, <code>OCR_PROCESSING</code>, <code>ANALYZING</code>, <code>READY</code>, <code>FAILED</code></li>
+<li>Gemini behind <code>AIProvider</code></li>
+<li>OCR behind <code>OCRProvider</code></li>
+<li>Prompt-injection protection that treats uploaded text as untrusted data</li>
+<li>Bounded AI input, timeout handling, transient retry policy, fenced-JSON parsing, and Zod validation</li>
+<li>Persisted document chunks and keyword-overlap retrieval</li>
+<li>Safe missing-Gemini state: <code>FAILED / AI_NOT_CONFIGURED</code></li>
+</ul>
+<h3 id="tasks-and-dashboard">Tasks and dashboard</h3>
+<ul>
+<li>Task create, list, update, and delete endpoints</li>
+<li>Action items never become tasks without explicit confirmation</li>
+<li>Transactional action-item conversion</li>
+<li>Source-document relationship retained on generated tasks</li>
+<li>Practical duplicate-submission protection</li>
+<li>Tenant-scoped totals for ready, processing, and failed documents</li>
+<li>Tenant-scoped totals for pending and completed tasks</li>
+<li>Recent persisted documents and tasks</li>
+</ul>
+<h2 id="technology-stack">Technology stack</h2>
+<div class="table-wrap"><table><thead><tr><th>Layer</th><th>Technology</th></tr></thead><tbody>
+<tr><td>Frontend</td><td>Next.js 15, React 19, TypeScript</td></tr>
+<tr><td>Client data</td><td>TanStack React Query, Zustand</td></tr>
+<tr><td>Backend</td><td>Express 5, TypeScript</td></tr>
+<tr><td>Database</td><td>Supabase managed PostgreSQL</td></tr>
+<tr><td>ORM and migrations</td><td>Prisma 6.19</td></tr>
+<tr><td>Authentication</td><td>JWT, opaque refresh tokens, bcrypt</td></tr>
+<tr><td>AI</td><td>Google Gemini via <code>@google/generative-ai</code></td></tr>
+<tr><td>OCR</td><td>Tesseract.js</td></tr>
+<tr><td>PDF extraction</td><td><code>pdf-parse</code></td></tr>
+<tr><td>Validation</td><td>Zod and <code>file-type</code></td></tr>
+<tr><td>Security and logging</td><td>Helmet, CORS, rate limiting, Pino</td></tr>
+<tr><td>Testing</td><td>Vitest and Supertest</td></tr>
+<tr><td>Package manager</td><td>pnpm</td></tr>
+</tbody></table></div>
+<h2 id="architecture">Architecture</h2>
+<pre><code class="language-text">Next.js + React Query + Zustand
+              ↓ HTTPS / JSON / multipart
+Express API + JWT + Membership authorization
+              ↓ shared Prisma Client
+Supavisor transaction pooler (DATABASE_URL)
+              ↓
+Supabase PostgreSQL
+
+Prisma migration commands
+              ↓ direct/session connection (DIRECT_URL)
+Supabase PostgreSQL</code></pre>
+<p>Supabase is used only as managed PostgreSQL. The application does not use Supabase Auth, Storage, Realtime, browser database access, or automatically generated RLS policies. Prisma remains the only ORM and migration system.</p>
+<h2 id="project-structure">Project structure</h2>
+<pre><code class="language-text">app/                    Next.js routes and screens
+components/             Reusable UI components
+lib/                    API client and authentication state
+server/src/             Express application and domain services
+server/tests/           API and service tests
+prisma/schema.prisma    Database schema
+prisma/migrations/      Version-controlled migration SQL
+docs/                   Detailed technical documentation</code></pre>
+<h2 id="environment-setup">Environment setup</h2>
+<p>Copy the safe template and replace placeholders locally:</p>
+<pre><code class="language-bash">cp .env.example .env</code></pre>
+<p>Windows PowerShell:</p>
+<pre><code class="language-powershell">Copy-Item .env.example .env</code></pre>
+<p>Required configuration:</p>
+<div class="table-wrap"><table><thead><tr><th>Variable</th><th>Purpose</th></tr></thead><tbody>
+<tr><td><code>DATABASE_URL</code></td><td>Runtime Supavisor transaction connection</td></tr>
+<tr><td><code>DIRECT_URL</code></td><td>Direct/session connection for Prisma administration</td></tr>
+<tr><td><code>JWT_ACCESS_SECRET</code></td><td>Access-token signing secret, minimum 32 characters</td></tr>
+<tr><td><code>JWT_REFRESH_SECRET</code></td><td>Refresh-token HMAC secret, minimum 32 characters</td></tr>
+<tr><td><code>GEMINI_API_KEY</code></td><td>Optional for startup; required for AI analysis and Q&amp;A</td></tr>
+<tr><td><code>GEMINI_MODEL</code></td><td>Configurable Gemini model name</td></tr>
+<tr><td><code>FRONTEND_URL</code></td><td>Allowed browser origin</td></tr>
+<tr><td><code>NEXT_PUBLIC_API_URL</code></td><td>Public Express API base URL</td></tr>
+<tr><td><code>LOCAL_UPLOAD_DIR</code></td><td>Local hackathon upload directory</td></tr>
+<tr><td><code>MAX_UPLOAD_BYTES</code></td><td>Maximum accepted upload size</td></tr>
+<tr><td><code>PORT</code></td><td>API port, defaults to <code>4000</code></td></tr>
+</tbody></table></div>
+<p>Never commit <code>.env</code>. Only <code>NEXT_PUBLIC_API_URL</code> is exposed to browser code.</p>
+<h2 id="local-installation-and-database-setup">Local installation and database setup</h2>
+<p>Prerequisites: Node.js, pnpm, and a Supabase development project.</p>
+<pre><code class="language-bash">pnpm install
+pnpm prisma:format
+pnpm prisma:generate
+pnpm prisma:validate
+pnpm prisma:migrate:deploy</code></pre>
+<p>Runtime <code>DATABASE_URL</code> should use Supavisor transaction mode on port <code>6543</code> with:</p>
+<pre><code class="language-text">pgbouncer=true&amp;connection_limit=1&amp;sslmode=require</code></pre>
+<p><code>DIRECT_URL</code> should use the direct or Supavisor session connection on port <code>5432</code> with <code>sslmode=require</code>. Never run destructive reset commands against the shared Supabase project.</p>
+<h2 id="start-the-application">Start the application</h2>
+<p>Use two terminals:</p>
+<pre><code class="language-bash"># Terminal 1 — frontend
+pnpm dev
+
+# Terminal 2 — backend
+pnpm dev:api</code></pre>
+<ul>
+<li>Frontend: <code>http://localhost:3000</code></li>
+<li>Backend: <code>http://localhost:4000</code></li>
+<li>Health: <code>http://localhost:4000/api/v1/health</code></li>
+</ul>
+<p>Expected health response:</p>
+<pre><code class="language-json">{
+  &quot;data&quot;: {
+    &quot;status&quot;: &quot;ok&quot;,
+    &quot;database&quot;: &quot;connected&quot;
+  },
+  &quot;error&quot;: null,
+  &quot;meta&quot;: {
+    &quot;requestId&quot;: &quot;generated-request-id&quot;
+  }
+}</code></pre>
+<h2 id="api-overview">API overview</h2>
+<h3 id="authentication">Authentication</h3>
+<ul>
+<li><code>POST /api/v1/auth/register</code></li>
+<li><code>POST /api/v1/auth/login</code></li>
+<li><code>POST /api/v1/auth/refresh</code></li>
+<li><code>POST /api/v1/auth/logout</code></li>
+<li><code>GET /api/v1/auth/me</code></li>
+</ul>
+<h3 id="documents">Documents</h3>
+<ul>
+<li><code>POST /api/v1/documents</code></li>
+<li><code>GET /api/v1/documents</code></li>
+<li><code>GET /api/v1/documents/:documentId</code></li>
+<li><code>DELETE /api/v1/documents/:documentId</code></li>
+<li><code>GET /api/v1/documents/:documentId/status</code></li>
+<li><code>POST /api/v1/documents/:documentId/analyze</code></li>
+<li><code>POST /api/v1/documents/:documentId/questions</code></li>
+<li><code>POST /api/v1/documents/:documentId/action-items/tasks</code></li>
+</ul>
+<h3 id="tasks-and-dashboard">Tasks and dashboard</h3>
+<ul>
+<li><code>POST /api/v1/tasks</code></li>
+<li><code>GET /api/v1/tasks</code></li>
+<li><code>PATCH /api/v1/tasks/:taskId</code></li>
+<li><code>DELETE /api/v1/tasks/:taskId</code></li>
+<li><code>GET /api/v1/dashboard/summary</code></li>
+</ul>
+<p>See <a href="docs/API.md">API documentation</a> for behavior and response conventions.</p>
+<h2 id="testing-and-verified-results">Testing and verified results</h2>
+<pre><code class="language-bash">pnpm install
+pnpm prisma:format
+pnpm prisma:generate
+pnpm prisma:validate
+pnpm typecheck
+pnpm lint
+pnpm test -- --run
+pnpm build:api
+pnpm build</code></pre>
+<p>Latest Round 1 verification:</p>
+<ul>
+<li>Prisma formatting, generation, and schema validation: passed</li>
+<li>Frontend and backend type checks: passed</li>
+<li>ESLint: passed</li>
+<li>Automated tests: <strong>19/19 passed</strong></li>
+<li>Express production build: passed</li>
+<li>Next.js production build: passed</li>
+<li>Supabase migration status: schema up to date</li>
+<li>Live registration, current user, refresh, logout, upload, task, dashboard, tenant-isolation, and restart-persistence checks: passed</li>
+<li>Non-failing warning: Next.js ESLint plugin is not yet configured</li>
+</ul>
+<h2 id="round-1-demo-procedure">Round 1 demo procedure</h2>
+<ol>
+<li>Configure <code>.env</code>, including a valid Gemini key for the complete AI demonstration.</li>
+<li>Start the frontend and backend.</li>
+<li>Open the health endpoint and confirm <code>database: "connected"</code>.</li>
+<li>Register a new user and enter the workspace.</li>
+<li>Upload a short TXT or PDF document.</li>
+<li>Watch the processing state progress to <code>READY</code>.</li>
+<li>Review the summary, key points, keywords, important dates, and action items.</li>
+<li>Ask a question whose answer appears clearly in the document.</li>
+<li>Show the returned chunk citation and excerpt.</li>
+<li>Select one or more action items and explicitly confirm task creation.</li>
+<li>Open Tasks and update a task status.</li>
+<li>Open the dashboard and show the persisted totals.</li>
+<li>Restart the API and confirm the data remains available.</li>
+</ol>
+<p>If Gemini is not configured, demonstrate the safe <code>AI_NOT_CONFIGURED</code> failure and retry behavior, but do not claim the live AI workflow is complete.</p>
+<h2 id="under-development">Under development</h2>
+<h3 id="round-1-follow-up">Round 1 follow-up</h3>
+<ul>
+<li>Add and verify the real Gemini key in the evaluation environment</li>
+<li>Run a live OCR demonstration with an image and scanned PDF</li>
+<li>Configure the Next.js ESLint plugin to remove the current build warning</li>
+<li>Finalize teammate names, Git repository metadata, remote, and clean commit groups</li>
+<li>Add the selected project license</li>
+</ul>
+<h3 id="production-roadmap">Production roadmap</h3>
+<ul>
+<li>Replace local uploads with durable object storage</li>
+<li>Replace in-process jobs with a durable queue and worker</li>
+<li>Add shared rate-limit storage for multiple API replicas</li>
+<li>Add multi-pass synthesis for very large documents</li>
+<li>Improve chunk/page metadata during PDF extraction and OCR</li>
+<li>Add broader integration tests against an isolated test database</li>
+<li>Add CI for install, Prisma validation, tests, lint, and builds</li>
+<li>Deploy preview and production environments with managed secrets</li>
+<li>Evaluate defense-in-depth database RLS without weakening backend Membership checks</li>
+</ul>
+<h2 id="known-hackathon-limitations">Known hackathon limitations</h2>
+<ul>
+<li>Local file storage is suitable for the current single-instance demo, not horizontal scaling.</li>
+<li>In-process document jobs are not durable across restarts.</li>
+<li>OCR for scanned PDFs is limited to the first 30 rendered pages.</li>
+<li>Long Gemini input is bounded to protect latency and cost.</li>
+<li>Retrieval uses keyword overlap, not vector search; this project does not describe it as vector RAG.</li>
+<li>Access JWTs are stored in session storage; refresh tokens remain HTTP-only cookies.</li>
+<li>Supabase Auth, Supabase Storage, billing, OAuth, Redis, BullMQ, calendar, email, voice, and admin features are intentionally outside the Round 1 MVP.</li>
+</ul>
+<h2 id="documentation">Documentation</h2>
+<ul>
+<li><a href="PROJECT_DOCUMENTATION.md">Project documentation</a></li>
+<li><a href="docs/ARCHITECTURE.md">Architecture</a></li>
+<li><a href="docs/API.md">API</a></li>
+<li><a href="docs/BACKEND.md">Backend</a></li>
+<li><a href="docs/FRONTEND.md">Frontend</a></li>
+<li><a href="docs/DATABASE.md">Database</a></li>
+<li><a href="docs/DEPLOYMENT.md">Deployment</a></li>
+<li><a href="security_best_practices_report.md">Security review</a></li>
+<li><a href="CHANGELOG.md">Changelog</a></li>
+</ul>
+<h2 id="contributors">Contributors</h2>
+<ul>
+<li>Teammate 1 Name — Frontend and UI</li>
+<li>Teammate 2 Name — Backend, authentication and database</li>
+<li>Teammate 3 Name — AI, OCR, document processing and tasks</li>
+</ul>
+<p>Replace these placeholders with the final team names before submission.</p>
+<h2 id="license-status">License status</h2>
+<p>No open-source license has been selected yet. Add a <code>LICENSE</code> file before distributing Intellix AI under an open-source license.</p><footer>Generated from README.md for Intellix AI Round 1 evaluation.</footer></main></body></html>

@@ -1,0 +1,115 @@
+import { randomUUID } from "node:crypto";
+import cors from "cors";
+import express from "express";
+import rateLimit from "express-rate-limit";
+import helmet from "helmet";
+import multer from "multer";
+import pinoHttp from "pino-http";
+import { z } from "zod";
+import { env } from "./config/env.js";
+import { prisma } from "./config/prisma.js";
+import { jobs } from "./jobs/job.service.js";
+import { authContext, requireAuth } from "./middleware/auth.js";
+import { login, loginSchema, logout, register, registerSchema, rotateRefreshToken } from "./modules/auth/auth.js";
+import { analysisSchema } from "./modules/ai/provider.js";
+import { answerQuestion, createDocumentProcessor, questionSchema, sanitizeOriginalName, storeUpload } from "./modules/documents/document.service.js";
+import { AppError, errorHandler, notFound, ok } from "./shared/http.js";
+
+const refreshCookie = "intellix_refresh";
+const taskInput = z.object({
+  title: z.string().trim().min(1).max(200), description: z.string().trim().max(2_000).optional(),
+  dueDate: z.string().datetime({ offset: true }).optional(), priority: z.enum(["LOW", "MEDIUM", "HIGH"]).default("MEDIUM"),
+});
+const actionTaskSchema = z.object({ items: z.array(taskInput).min(1).max(30), confirmed: z.literal(true) });
+const taskPatch = taskInput.partial().extend({ status: z.enum(["TODO", "IN_PROGRESS", "DONE"]).optional() }).refine((value) => Object.keys(value).length > 0, "At least one change is required.");
+
+function cookie(req: express.Request, name: string) {
+  const item = req.header("cookie")?.split(";").map((value) => value.trim()).find((value) => value.startsWith(`${name}=`));
+  return item ? decodeURIComponent(item.slice(name.length + 1)) : undefined;
+}
+function setRefreshCookie(res: express.Response, value: string) {
+  res.cookie(refreshCookie, value, { httpOnly: true, secure: env.NODE_ENV === "production", sameSite: "lax", maxAge: env.JWT_REFRESH_EXPIRES_IN_DAYS * 86_400_000, path: "/api/v1/auth" });
+}
+function publicDocument<T extends { storageKey?: unknown; extractedText?: unknown; errorMessage?: unknown }>(document: T) {
+  const safe = { ...document };
+  delete safe.storageKey;
+  delete safe.extractedText;
+  return safe;
+}
+
+export function createApp() {
+  const app = express();
+  app.disable("x-powered-by");
+  app.use((req, res, next) => { res.locals.requestId = req.header("x-request-id") ?? randomUUID(); res.setHeader("x-request-id", res.locals.requestId); next(); });
+  app.use(pinoHttp({ redact: ["req.headers.authorization", "req.headers.cookie", "req.body.password", "req.body.refreshToken"] }));
+  app.use(helmet());
+  app.use(cors({ origin: env.FRONTEND_URL, credentials: true, methods: ["GET", "POST", "PATCH", "DELETE"] }));
+  app.use(express.json({ limit: "1mb" }));
+  const health = async (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try { await prisma.$queryRaw`SELECT 1`; ok(res, { status: "ok", database: "connected" }); }
+    catch { next(new AppError(503, "DATABASE_UNAVAILABLE", "The database is unavailable.")); }
+  };
+  app.get("/health", health);
+  app.get("/api/v1/health", health);
+
+  const authLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
+  app.post("/api/v1/auth/register", authLimiter, async (req, res, next) => { try { const result = await register(registerSchema.parse(req.body)); setRefreshCookie(res, result.refreshToken); ok(res, { user: result.user, workspace: result.workspace, accessToken: result.accessToken }, 201); } catch (error) { next(error); } });
+  app.post("/api/v1/auth/login", authLimiter, async (req, res, next) => { try { const result = await login(loginSchema.parse(req.body)); setRefreshCookie(res, result.refreshToken); ok(res, { user: result.user, workspace: result.workspace, accessToken: result.accessToken }); } catch (error) { next(error); } });
+  app.post("/api/v1/auth/refresh", authLimiter, async (req, res, next) => { try { const value = cookie(req, refreshCookie); if (!value) throw new AppError(401, "REFRESH_REQUIRED", "A refresh session is required."); const result = await rotateRefreshToken(value); setRefreshCookie(res, result.refreshToken); ok(res, { accessToken: result.accessToken }); } catch (error) { next(error); } });
+  app.post("/api/v1/auth/logout", async (req, res, next) => { try { await logout(cookie(req, refreshCookie)); res.clearCookie(refreshCookie, { path: "/api/v1/auth" }); ok(res, { loggedOut: true }); } catch (error) { next(error); } });
+  app.get("/api/v1/auth/me", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const membership = await prisma.membership.findUnique({ where: { userId_workspaceId: auth }, include: { user: true, workspace: true } }); if (!membership) throw new AppError(404, "MEMBERSHIP_NOT_FOUND", "Workspace membership not found."); ok(res, { user: { id: membership.user.id, name: membership.user.name, email: membership.user.email }, workspace: membership.workspace, role: membership.role }); } catch (error) { next(error); } });
+
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: env.MAX_UPLOAD_BYTES, files: 1 } });
+  const uploadLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
+  app.post("/api/v1/documents", uploadLimiter, requireAuth, upload.single("file"), async (req, res, next) => { try {
+    if (!req.file) throw new AppError(400, "FILE_REQUIRED", "Choose a document to upload.");
+    const auth = authContext(req); const stored = await storeUpload(req.file, auth.workspaceId);
+    const document = await prisma.document.create({ data: { workspaceId: auth.workspaceId, uploadedById: auth.userId, name: sanitizeOriginalName(req.file.originalname), mimeType: stored.mimeType, sizeBytes: req.file.size, storageKey: stored.storageKey } });
+    await prisma.auditLog.create({ data: { workspaceId: auth.workspaceId, actorUserId: auth.userId, action: "document.upload", resource: "Document", resourceId: document.id } });
+    await jobs.enqueue(`document:${document.id}`, () => createDocumentProcessor().process(document.id, auth.workspaceId));
+    ok(res, publicDocument(document), 202);
+  } catch (error) { next(error); } });
+  app.get("/api/v1/documents", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const documents = await prisma.document.findMany({ where: { workspaceId: auth.workspaceId, deletedAt: null }, orderBy: { updatedAt: "desc" } }); ok(res, documents.map(publicDocument)); } catch (error) { next(error); } });
+  app.get("/api/v1/documents/:documentId", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const document = await prisma.document.findFirst({ where: { id: String(req.params.documentId), workspaceId: auth.workspaceId, deletedAt: null } }); if (!document) throw new AppError(404, "DOCUMENT_NOT_FOUND", "Document not found."); ok(res, publicDocument(document)); } catch (error) { next(error); } });
+  app.get("/api/v1/documents/:documentId/status", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const document = await prisma.document.findFirst({ where: { id: String(req.params.documentId), workspaceId: auth.workspaceId, deletedAt: null }, select: { id: true, status: true, errorCode: true, errorMessage: true, updatedAt: true } }); if (!document) throw new AppError(404, "DOCUMENT_NOT_FOUND", "Document not found."); ok(res, document); } catch (error) { next(error); } });
+  app.post("/api/v1/documents/:documentId/analyze", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const document = await prisma.document.findFirst({ where: { id: String(req.params.documentId), workspaceId: auth.workspaceId, deletedAt: null } }); if (!document) throw new AppError(404, "DOCUMENT_NOT_FOUND", "Document not found."); await jobs.enqueue(`document:${document.id}`, () => createDocumentProcessor().process(document.id, auth.workspaceId)); ok(res, { id: document.id, status: "UPLOADED" }, 202); } catch (error) { next(error); } });
+  app.post("/api/v1/documents/:documentId/questions", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const { question } = questionSchema.parse(req.body); ok(res, await answerQuestion(String(req.params.documentId), auth.workspaceId, question)); } catch (error) { next(error); } });
+  app.delete("/api/v1/documents/:documentId", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const result = await prisma.document.updateMany({ where: { id: String(req.params.documentId), workspaceId: auth.workspaceId, deletedAt: null }, data: { deletedAt: new Date() } }); if (!result.count) throw new AppError(404, "DOCUMENT_NOT_FOUND", "Document not found."); ok(res, { deleted: true }); } catch (error) { next(error); } });
+
+  app.post("/api/v1/documents/:documentId/action-items/tasks", requireAuth, async (req, res, next) => { try {
+    const auth = authContext(req); const input = actionTaskSchema.parse(req.body);
+    const document = await prisma.document.findFirst({ where: { id: String(req.params.documentId), workspaceId: auth.workspaceId, status: "READY", deletedAt: null } });
+    if (!document) throw new AppError(404, "DOCUMENT_NOT_READY", "The document is not ready for task creation.");
+    analysisSchema.shape.actionItems.parse(document.actionItems);
+    const tasks = await prisma.$transaction(async (tx) => {
+      const existing = await tx.task.findMany({ where: { workspaceId: auth.workspaceId, sourceDocumentId: document.id }, select: { title: true, dueDate: true } });
+      const unique = input.items.filter((item) => !existing.some((task) => task.title === item.title && task.dueDate?.toISOString() === (item.dueDate ? new Date(item.dueDate).toISOString() : undefined)));
+      return Promise.all(unique.map((item) => tx.task.create({ data: { workspaceId: auth.workspaceId, createdById: auth.userId, sourceDocumentId: document.id, title: item.title, description: item.description, dueDate: item.dueDate ? new Date(item.dueDate) : undefined, priority: item.priority } })));
+    });
+    await prisma.auditLog.create({ data: { workspaceId: auth.workspaceId, actorUserId: auth.userId, action: "tasks.create_from_document", resource: "Document", resourceId: document.id, metadata: { count: tasks.length } } });
+    ok(res, tasks, 201);
+  } catch (error) { next(error); } });
+  app.post("/api/v1/tasks", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const item = taskInput.parse(req.body); const task = await prisma.task.create({ data: { ...item, dueDate: item.dueDate ? new Date(item.dueDate) : undefined, workspaceId: auth.workspaceId, createdById: auth.userId } }); ok(res, task, 201); } catch (error) { next(error); } });
+  app.get("/api/v1/tasks", requireAuth, async (req, res, next) => { try { const auth = authContext(req); ok(res, await prisma.task.findMany({ where: { workspaceId: auth.workspaceId }, orderBy: { updatedAt: "desc" } })); } catch (error) { next(error); } });
+  app.patch("/api/v1/tasks/:taskId", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const item = taskPatch.parse(req.body); const existing = await prisma.task.findFirst({ where: { id: String(req.params.taskId), workspaceId: auth.workspaceId } }); if (!existing) throw new AppError(404, "TASK_NOT_FOUND", "Task not found."); ok(res, await prisma.task.update({ where: { id: existing.id }, data: { ...item, dueDate: item.dueDate ? new Date(item.dueDate) : undefined } })); } catch (error) { next(error); } });
+  app.delete("/api/v1/tasks/:taskId", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const result = await prisma.task.deleteMany({ where: { id: String(req.params.taskId), workspaceId: auth.workspaceId } }); if (!result.count) throw new AppError(404, "TASK_NOT_FOUND", "Task not found."); ok(res, { deleted: true }); } catch (error) { next(error); } });
+  app.get("/api/v1/dashboard/summary", requireAuth, async (req, res, next) => { try {
+    const auth = authContext(req); const documentScope = { workspaceId: auth.workspaceId, deletedAt: null } as const;
+    const [totalDocuments, readyDocuments, processingDocuments, failedDocuments, totalTasks, pendingTasks, completedTasks, recentDocuments, recentTasks] = await Promise.all([
+      prisma.document.count({ where: documentScope }),
+      prisma.document.count({ where: { ...documentScope, status: "READY" } }),
+      prisma.document.count({ where: { ...documentScope, status: { in: ["UPLOADED", "EXTRACTING", "OCR_PROCESSING", "ANALYZING"] } } }),
+      prisma.document.count({ where: { ...documentScope, status: "FAILED" } }),
+      prisma.task.count({ where: { workspaceId: auth.workspaceId } }),
+      prisma.task.count({ where: { workspaceId: auth.workspaceId, status: { in: ["TODO", "IN_PROGRESS"] } } }),
+      prisma.task.count({ where: { workspaceId: auth.workspaceId, status: "DONE" } }),
+      prisma.document.findMany({ where: documentScope, orderBy: { updatedAt: "desc" }, take: 5, select: { id: true, name: true, status: true, updatedAt: true } }),
+      prisma.task.findMany({ where: { workspaceId: auth.workspaceId }, orderBy: { updatedAt: "desc" }, take: 5 }),
+    ]);
+    ok(res, { totalDocuments, readyDocuments, processingDocuments, failedDocuments, totalTasks, pendingTasks, completedTasks, recentDocuments, recentTasks });
+  } catch (error) { next(error); } });
+
+  app.use(notFound);
+  app.use(errorHandler);
+  return app;
+}
