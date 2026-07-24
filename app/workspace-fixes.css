@@ -1,0 +1,6 @@
+.stat-card{display:block}
+.icon-button.sidebar-close{display:none}
+.dashboard-grid>.wide-card{grid-column:1/-1}
+.auth-panel>.logo{color:var(--app-text)}
+.auth-panel>.logo .logo-mark span{border-color:var(--app-primary)}
+@media(max-width:900px){.icon-button.sidebar-close{display:grid}}
