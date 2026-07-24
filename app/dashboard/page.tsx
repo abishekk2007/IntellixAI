@@ -1,91 +1,147 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
-  ArrowRight, Bell, CalendarDays, Check, ChevronDown, CircleHelp, Clock3,
-  Command, File, FileText, FolderKanban, Home, LayoutGrid, Menu, MessageSquare,
-  Mic, MoreHorizontal, Paperclip, Search, Send, Settings, Sparkles,
-  SquarePen, Target, Upload, Users, WandSparkles, X,
+  AlertCircle, ArrowRight, BarChart3, Bell, CheckCircle2, CircleHelp,
+  FileCheck2, FileClock, Files, LayoutDashboard, ListTodo, Menu,
+  Search, Settings, Sparkles, Upload, X,
 } from "lucide-react";
 import { Logo } from "@/components/logo";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, type DocumentRecord, type TaskRecord } from "@/lib/api";
+import { useAuthStore } from "@/lib/auth-store";
 
-const navItems = [
-  { label: "Home", icon: Home }, { label: "AI Workspace", icon: Sparkles },
-  { label: "Documents", icon: FileText }, { label: "Knowledge", icon: LayoutGrid },
-  { label: "Tasks", icon: Check }, { label: "Calendar", icon: CalendarDays },
+type DashboardSummary = {
+  totalDocuments: number;
+  readyDocuments: number;
+  processingDocuments: number;
+  failedDocuments: number;
+  totalTasks: number;
+  pendingTasks: number;
+  completedTasks: number;
+  recentDocuments: Pick<DocumentRecord, "id" | "name" | "status" | "updatedAt">[];
+  recentTasks: TaskRecord[];
+};
+
+const navigation = [
+  { label: "Overview", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Documents", href: "/documents", icon: Files },
+  { label: "AI Workspace", href: "#ai-workspace", icon: Sparkles },
+  { label: "Tasks", href: "/tasks", icon: ListTodo },
 ];
 
-const starterPrompts = ["Summarize my latest documents", "Plan my priorities for today", "Create tasks from meeting notes"];
-
-export default function Dashboard() {
-  const [active, setActive] = useState("Home");
+export default function DashboardPage() {
+  const router = useRouter();
   const [mobileNav, setMobileNav] = useState(false);
-  const [query, setQuery] = useState("");
-  const [messages, setMessages] = useState<{ role: "user" | "ai"; text: string }[]>([]);
+  const user = useAuthStore((state) => state.user);
+  const workspace = useAuthStore((state) => state.workspace);
+  const load = useAuthStore((state) => state.load);
+  const logout = useAuthStore((state) => state.logout);
+  const summary = useQuery({
+    queryKey: ["dashboard-summary"],
+    queryFn: () => api<DashboardSummary>("/dashboard/summary"),
+    retry: false,
+  });
 
-  function sendMessage(event?: FormEvent) {
-    event?.preventDefault();
-    if (!query.trim()) return;
-    const text = query.trim();
-    setMessages((items) => [...items, { role: "user", text }, { role: "ai", text: "I’ve mapped that request to your workspace. Connect your AI provider and data sources to run it with full context." }]);
-    setQuery("");
-    setActive("AI Workspace");
+  useEffect(() => {
+    if (!user) void load().catch(() => router.push("/login"));
+  }, [load, router, user]);
+
+  async function signOut() {
+    await logout();
+    router.push("/login");
   }
 
-  return (
-    <main className="app-shell">
-      <aside className={`app-sidebar ${mobileNav ? "mobile-open" : ""}`}>
-        <div className="sidebar-top"><Logo/><button className="close-nav" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={19}/></button></div>
-        <button className="new-chat" onClick={() => { setActive("AI Workspace"); setMessages([]); setMobileNav(false); }}><SquarePen size={16}/> New conversation <span>⌘ N</span></button>
-        <nav className="app-nav" aria-label="Workspace navigation">
-          {navItems.map(({label, icon: Icon}) => <button key={label} className={active === label ? "active" : ""} onClick={() => {setActive(label);setMobileNav(false)}}><Icon size={17}/>{label}{label === "Tasks" && <i>4</i>}</button>)}
-        </nav>
-        <div className="sidebar-label">Workspace</div>
-        <nav className="app-nav secondary"><button><FolderKanban size={17}/> Projects</button><button><Users size={17}/> Shared with me</button></nav>
-        <div className="sidebar-spacer"/>
-        <div className="storage"><span><small>Workspace storage</small><small>2.4 / 10 GB</small></span><i><b/></i></div>
-        <nav className="app-nav secondary"><button><CircleHelp size={17}/> Help & support</button><button><Settings size={17}/> Settings</button></nav>
-        <div className="profile"><div className="profile-avatar">AK</div><span><strong>Alex Kumar</strong><small>alex@example.com</small></span><MoreHorizontal size={17}/></div>
+  return <main className="judge-dashboard">
+    <aside className={`judge-sidebar ${mobileNav ? "open" : ""}`}>
+      <div className="judge-brand"><Logo/><button onClick={() => setMobileNav(false)} aria-label="Close navigation"><X/></button></div>
+      <nav aria-label="Workspace navigation">
+        <span>Workspace</span>
+        {navigation.map(({label,href,icon:Icon}) => <Link key={label} href={href} className={label === "Overview" ? "active" : ""} onClick={() => setMobileNav(false)}><Icon/>{label}{label === "AI Workspace" && <small>Beta</small>}</Link>)}
+        <span>Manage</span>
+        <a href="#analytics"><BarChart3/>Analytics <small>Soon</small></a>
+        <a href="#settings"><Settings/>Settings <small>Soon</small></a>
+      </nav>
+      <div className="judge-help"><CircleHelp/><div><strong>Demo ready</strong><p>Need a quick walkthrough?</p></div></div>
+      <div className="judge-user"><div>{initials(user?.name)}</div><span><strong>{user?.name ?? "Intellix user"}</strong><small>{workspace?.name ?? "Your workspace"}</small></span><button onClick={signOut}>Sign out</button></div>
+    </aside>
+
+    <section className="judge-main">
+      <header className="judge-topbar">
+        <button className="judge-menu" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu/></button>
+        <div className="judge-search"><Search/><span>Search your workspace</span><kbd>⌘ K</kbd></div>
+        <Link className="judge-upload" href="/documents"><Upload/>Upload document</Link>
+        <button className="judge-notification" aria-label="Notifications"><Bell/><i/></button>
+        <div className="judge-avatar">{initials(user?.name)}</div>
+      </header>
+
+      <div className="judge-content">
+        <section className="judge-welcome">
+          <div><p>INTELLIX OVERVIEW</p><h1>Welcome back, {user?.name?.split(" ")[0] ?? "there"}</h1><span>Here is what is happening in your Intellix workspace.</span></div>
+          <div><Link href="/documents">Open documents</Link><Link className="primary" href="/documents"><Upload/>Upload document</Link></div>
+        </section>
+
+        {summary.isLoading ? <DashboardSkeleton/> : summary.isError || !summary.data ? <DashboardError/> : <DashboardData data={summary.data}/>}
+      </div>
+    </section>
+    {mobileNav && <button className="judge-scrim" onClick={() => setMobileNav(false)} aria-label="Close navigation overlay"/>}
+  </main>;
+}
+
+function DashboardData({data}:{data:DashboardSummary}) {
+  const stats = [
+    {label:"Total documents",value:data.totalDocuments,detail:"All workspace files",icon:Files,tone:"forest"},
+    {label:"Ready documents",value:data.readyDocuments,detail:"Available for Q&A",icon:FileCheck2,tone:"green"},
+    {label:"Processing",value:data.processingDocuments,detail:"Extraction or analysis",icon:FileClock,tone:"blue"},
+    {label:"Failed",value:data.failedDocuments,detail:"Review and retry",icon:AlertCircle,tone:"red"},
+    {label:"Pending tasks",value:data.pendingTasks,detail:"Action still required",icon:ListTodo,tone:"amber"},
+    {label:"Completed tasks",value:data.completedTasks,detail:`${data.totalTasks} total tasks`,icon:CheckCircle2,tone:"mint"},
+  ];
+  const documentMax = Math.max(data.totalDocuments, 1);
+  return <>
+    <section className="judge-stats" aria-label="Workspace statistics">
+      {stats.map(({label,value,detail,icon:Icon,tone}) => <article key={label}><span className={`judge-stat-icon ${tone}`}><Icon/></span><div><p>{label}</p><strong>{value}</strong><small>{detail}</small></div></article>)}
+    </section>
+
+    <section className="judge-grid">
+      <article className="judge-card judge-activity" id="analytics">
+        <header><div><p>WORKSPACE ACTIVITY</p><h2>Processing overview</h2></div><span>Live totals</span></header>
+        <div className="activity-bars" aria-label="Current document status distribution">
+          <ActivityBar label="Ready" value={data.readyDocuments} max={documentMax}/>
+          <ActivityBar label="Processing" value={data.processingDocuments} max={documentMax}/>
+          <ActivityBar label="Failed" value={data.failedDocuments} max={documentMax}/>
+        </div>
+        <p className="honest-note">Historical analytics are not collected yet. This chart uses current persisted document totals.</p>
+      </article>
+
+      <aside className="judge-card judge-insight" id="ai-workspace">
+        <span className="insight-mark"><Sparkles/></span><p>AI WORKSPACE</p><h2>{insightTitle(data)}</h2><p>{insightText(data)}</p>
+        <Link href={data.failedDocuments ? "/documents" : data.pendingTasks ? "/tasks" : "/documents"}>{data.failedDocuments ? "Retry failed documents" : data.pendingTasks ? "Review pending tasks" : "Upload your next document"}<ArrowRight/></Link>
+        <small>General assistant chat is coming soon. Document Q&A is the supported AI workflow.</small>
       </aside>
 
-      <div className="app-content">
-        <header className="app-header"><button className="open-nav" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={20}/></button><div className="header-search"><Search size={16}/><span>Search your workspace...</span><kbd><Command size={11}/> K</kbd></div><div className="header-actions"><button aria-label="Notifications"><Bell size={18}/><i/></button><button className="invite"><Users size={15}/> Invite</button></div></header>
-        {active === "AI Workspace" ? (
-          <section className="chat-view">
-            <div className="chat-header"><div><span className="ai-dot"><Sparkles size={15}/></span><span><strong>New conversation</strong><small>General mode · Gemini</small></span></div><button><MoreHorizontal size={19}/></button></div>
-            <div className="chat-stream">
-              {messages.length === 0 ? <div className="chat-empty"><span><Sparkles size={27}/></span><h2>How can I help you work smarter?</h2><p>Ask about your documents, create content, organize your work, or start with one of these.</p><div>{starterPrompts.map(prompt => <button key={prompt} onClick={() => setQuery(prompt)}>{prompt}<ArrowRight size={14}/></button>)}</div></div> : messages.map((message,index)=><div key={index} className={`message ${message.role}`}><span>{message.role === "ai" ? <Sparkles size={15}/> : "AK"}</span><p>{message.text}</p></div>)}
-            </div>
-            <form className="chat-composer" onSubmit={sendMessage}><textarea aria-label="Message Intellix" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Ask Intellix anything..." rows={1}/><div><span><button type="button" aria-label="Attach file"><Paperclip size={17}/></button><button type="button" aria-label="Voice input"><Mic size={17}/></button><button type="button" className="mode-button"><WandSparkles size={14}/> General <ChevronDown size={13}/></button></span><button className="send-button" aria-label="Send message" disabled={!query.trim()}><Send size={16}/></button></div></form>
-            <small className="ai-disclaimer">Intellix can make mistakes. Check important information.</small>
-          </section>
-        ) : (
-          <DashboardHome onOpenAI={() => setActive("AI Workspace")} />
-        )}
-      </div>
-      {mobileNav && <button className="nav-scrim" onClick={()=>setMobileNav(false)} aria-label="Close navigation"/>}
-    </main>
-  );
+      <article className="judge-card judge-table-card">
+        <header><div><p>RECENT FILES</p><h2>Recent documents</h2></div><Link href="/documents">View all <ArrowRight/></Link></header>
+        {data.recentDocuments.length ? <div className="judge-table"><div className="judge-table-head"><span>File</span><span>Status</span><span>Updated</span><span>Action</span></div>{data.recentDocuments.map((document) => <div className="judge-table-row" key={document.id}><span><i className="file-tile"><Files/></i><b>{document.name}</b></span><span><em className={`status ${document.status.toLowerCase()}`}>{document.status.replaceAll("_"," ")}</em></span><time>{formatDate(document.updatedAt)}</time><Link href={`/documents/${document.id}`}>Open</Link></div>)}</div> : <EmptyInline text="No documents yet. Upload a file to begin." href="/documents"/>}
+      </article>
+
+      <article className="judge-card judge-table-card">
+        <header><div><p>ACTION CENTER</p><h2>Recent tasks</h2></div><Link href="/tasks">View all <ArrowRight/></Link></header>
+        {data.recentTasks.length ? <div className="judge-table task-table"><div className="judge-table-head"><span>Task</span><span>Priority</span><span>Status</span><span>Due</span></div>{data.recentTasks.map((task) => <div className="judge-table-row" key={task.id}><span><i className="task-tile"><CheckCircle2/></i><b>{task.title}</b></span><span><em className={`priority ${task.priority.toLowerCase()}`}>{task.priority}</em></span><span><em className="task-status">{task.status.replaceAll("_"," ")}</em></span><time>{task.dueDate ? formatDate(task.dueDate) : "No due date"}</time></div>)}</div> : <EmptyInline text="No tasks yet. Confirm an action item or create one." href="/tasks"/>}
+      </article>
+    </section>
+
+    <section className="judge-quick"><header><p>QUICK ACTIONS</p><h2>Keep work moving</h2></header><div><Link href="/documents"><Upload/><span><strong>Upload document</strong><small>PDF, TXT or image</small></span><ArrowRight/></Link><Link href="/documents"><Sparkles/><span><strong>Ask a document</strong><small>Grounded answers</small></span><ArrowRight/></Link><Link href="/tasks"><ListTodo/><span><strong>View tasks</strong><small>{data.pendingTasks} pending</small></span><ArrowRight/></Link></div></section>
+  </>;
 }
 
-function DashboardHome({ onOpenAI }: { onOpenAI: () => void }) {
-  const summary = useQuery({ queryKey: ["dashboard-summary"], queryFn: () => api<{totalDocuments:number;readyDocuments:number;processingDocuments:number;failedDocuments:number;totalTasks:number;pendingTasks:number;completedTasks:number}>("/dashboard/summary"), retry: false });
-  const stats = summary.data;
-  return <section className="dashboard-home">
-    <div className="dashboard-title"><div><p>Thursday, July 23</p><h1>Good morning, Alex.</h1><span>Here&apos;s what&apos;s happening across your workspace.</span></div><div><button className="dash-secondary"><Upload size={15}/> Upload</button><button className="dash-primary" onClick={onOpenAI}><Sparkles size={15}/> Ask Intellix</button></div></div>
-    <div className="dash-command"><Sparkles size={19}/><input aria-label="Ask Intellix" placeholder="Ask anything or tell Intellix what to do..." onFocus={onOpenAI}/><kbd>⌘ K</kbd></div>
-    <div className="stats-grid"><Stat icon={<Check size={18}/>} label="Tasks completed" value={stats ? String(stats.completedTasks) : "—"} detail={stats ? `${stats.pendingTasks} pending tasks` : "Sign in for live data"} tone="purple"/><Stat icon={<FileText size={18}/>} label="Documents" value={stats ? String(stats.totalDocuments) : "—"} detail={stats ? `${stats.readyDocuments} ready · ${stats.processingDocuments} processing` : "Sign in for live data"} tone="blue"/><Stat icon={<MessageSquare size={18}/>} label="AI conversations" value="—" detail="Conversation persistence next" tone="green"/><Stat icon={<Target size={18}/>} label="MVP workflow" value={stats ? "Live" : "Demo"} detail={stats ? "Connected to API" : "Prototype data below"} tone="amber"/></div>
-    <div className="dashboard-grid">
-      <article className="dash-card focus-card"><header><div><h3>Today&apos;s focus</h3><p>4 tasks · 2h 45m estimated</p></div><button><MoreHorizontal size={18}/></button></header><div className="progress-line"><i><b/></i><span>65%</span></div><Task checked title="Review Q3 strategy brief" meta="Completed at 9:42 AM"/><Task title="Prepare client presentation" meta="Today · 11:00 AM" tag="High"/><Task title="Team product sync" meta="Today · 2:30 PM"/><Task title="Send weekly progress report" meta="Today · 4:00 PM"/><button className="view-all">View all tasks <ArrowRight size={13}/></button></article>
-      <article className="dash-card insight-card"><header><div><h3>AI insight</h3><p>Based on your recent work</p></div><span className="insight-spark"><Sparkles size={17}/></span></header><div className="insight-body"><div className="insight-files"><i/><i/><i/><span>3 documents</span></div><h4>A growth opportunity is emerging</h4><p>Three recent reports point to strong demand in Southeast Asia, with Singapore leading early signals.</p><button>Explore this insight <ArrowRight size={13}/></button></div></article>
-      <article className="dash-card recent-card"><header><div><h3>Recent documents</h3><p>Continue where you left off</p></div><button>View all</button></header><Document name="Q3 Strategy Brief.pdf" meta="Edited 12 min ago" type="PDF" color="red"/><Document name="Product Roadmap 2026" meta="Edited 1 hour ago" type="DOC" color="blue"/><Document name="Market Research.xlsx" meta="Opened yesterday" type="XLS" color="green"/></article>
-      <article className="dash-card schedule-card"><header><div><h3>Upcoming</h3><p>Your schedule today</p></div><button><CalendarDays size={17}/></button></header><div className="time-row"><time>11:00<small>AM</small></time><i className="blue"/><span><strong>Client presentation</strong><small>Zoom · 45 min</small></span></div><div className="time-row"><time>2:30<small>PM</small></time><i className="purple"/><span><strong>Team product sync</strong><small>Meeting room A · 30 min</small></span></div><div className="time-row"><time>4:00<small>PM</small></time><i className="green"/><span><strong>Weekly review</strong><small>Focus time · 45 min</small></span></div><button className="view-all">Open calendar <ArrowRight size={13}/></button></article>
-    </div>
-  </section>
-}
-
-function Stat({icon,label,value,detail,tone}:{icon:React.ReactNode,label:string,value:string,detail:string,tone:string}){return <article className="stat-card"><span className={`stat-icon ${tone}`}>{icon}</span><div><p>{label}</p><strong>{value}</strong><small>{detail}</small></div></article>}
-function Task({title,meta,checked,tag}:{title:string,meta:string,checked?:boolean,tag?:string}){return <div className={`dash-task ${checked?"checked":""}`}><button aria-label={`Mark ${title} complete`}>{checked?<Check size={12}/>:null}</button><span><strong>{title}</strong><small><Clock3 size={11}/>{meta}</small></span>{tag&&<i>{tag}</i>}</div>}
-function Document({name,meta,type,color}:{name:string,meta:string,type:string,color:string}){return <div className="document-row"><span className={`file-icon ${color}`}><File size={18}/><small>{type}</small></span><span><strong>{name}</strong><small>{meta}</small></span><button><MoreHorizontal size={17}/></button></div>}
+function ActivityBar({label,value,max}:{label:string;value:number;max:number}) { return <div><span><b>{label}</b><strong>{value}</strong></span><i><b style={{width:`${Math.max(value ? 8 : 0,(value/max)*100)}%`}}/></i></div>; }
+function EmptyInline({text,href}:{text:string;href:string}) { return <div className="judge-empty"><p>{text}</p><Link href={href}>Get started <ArrowRight/></Link></div>; }
+function DashboardSkeleton() { return <div className="judge-loading"><i/><i/><i/><i/><i/><i/></div>; }
+function DashboardError() { return <div className="judge-error"><AlertCircle/><div><h2>Dashboard data is unavailable</h2><p>Sign in again or verify that the API is running.</p></div></div>; }
+function initials(name?:string|null) { return name?.split(" ").filter(Boolean).slice(0,2).map((part) => part[0]).join("").toUpperCase() || "IA"; }
+function formatDate(value:string) { return new Intl.DateTimeFormat(undefined,{month:"short",day:"numeric",year:"numeric"}).format(new Date(value)); }
+function insightTitle(data:DashboardSummary) { if(data.failedDocuments) return `${data.failedDocuments} document${data.failedDocuments === 1 ? " needs" : "s need"} attention`; if(data.processingDocuments) return "Your document intelligence is processing"; if(data.pendingTasks) return `${data.pendingTasks} task${data.pendingTasks === 1 ? " is" : "s are"} waiting`; return "Your workspace is ready for the next document"; }
+function insightText(data:DashboardSummary) { if(data.failedDocuments) return "Open Documents to review the safe failure reason and retry analysis."; if(data.processingDocuments) return "Intellix is extracting, OCR processing, or analyzing your uploaded files."; if(data.pendingTasks) return "Review the action items you have already confirmed and keep the workflow moving."; return "Upload a source file to generate structured intelligence and grounded document answers."; }
