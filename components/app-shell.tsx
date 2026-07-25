@@ -10,6 +10,7 @@ import { useAuthStore } from "@/lib/auth-store";
 const navigation = [
   { label: "Overview", href: "/dashboard", icon: LayoutDashboard },
   { label: "Documents", href: "/documents", icon: Files },
+  { label: "Upload History", href: "/documents/history", icon: BarChart3 },
   { label: "AI Workspace", href: "/workspace", icon: Sparkles, badge: "Beta" },
   { label: "Tasks", href: "/tasks", icon: ListTodo },
   { label: "Knowledge Graph", href: "/knowledge", icon: Network, badge: "New" },

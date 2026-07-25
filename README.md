@@ -35,6 +35,7 @@ Intellix solves this by creating one intelligent workspace. When you upload a do
 | **Cross-document Entity Search** | Find people, projects, and topics across your entire knowledge base. |
 | **Relationship Exploration** | Discover how entities connect (e.g. "Mentions", "Assigned to"). |
 | **Source Excerpts and Citations** | Every node and answer is backed by exact document excerpts. |
+| **Document Upload History** | Review every document uploaded to the workspace and track its processing timeline. |
 | **Dashboard Analytics** | Overview of workspace activity, storage, and entity counts. |
 | **Responsive UI** | Seamless experience across mobile and desktop. |
 | **Safe Quota & Failure Handling** | System gracefully degrades to Evidence-only mode during API limits. |

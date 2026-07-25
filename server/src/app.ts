@@ -78,6 +78,93 @@ export function createApp() {
     ok(res, publicDocument(document), 202);
   } catch (error) { next(error); } });
   app.get("/api/v1/documents", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const documents = await prisma.document.findMany({ where: { workspaceId: auth.workspaceId, deletedAt: null }, orderBy: { updatedAt: "desc" } }); ok(res, documents.map(publicDocument)); } catch (error) { next(error); } });
+  app.get("/api/v1/documents/history", requireAuth, async (req, res, next) => { try {
+    const auth = authContext(req);
+    const page = Math.max(1, parseInt(req.query.page as string || "1", 10));
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit as string || "20", 10)));
+    const search = req.query.search as string | undefined;
+    const status = req.query.status as string | undefined;
+    const fileType = req.query.fileType as string | undefined;
+    const analysisMode = req.query.analysisMode as string | undefined;
+    const sort = req.query.sort as string | undefined;
+
+    const where: Record<string, unknown> = { workspaceId: auth.workspaceId, deletedAt: null };
+    if (search) where.name = { contains: search, mode: "insensitive" };
+    if (status) where.status = status;
+    if (fileType) {
+      if (fileType === "txt") where.mimeType = "text/plain";
+      else if (fileType === "pdf") where.mimeType = "application/pdf";
+      else if (fileType === "image") where.mimeType = { startsWith: "image/" };
+    }
+    if (analysisMode) {
+      if (analysisMode === "evidence-only") where.errorCode = "EVIDENCE_ONLY";
+      else if (analysisMode === "synthesis") where.errorCode = null;
+      // "not-analysed" could mean status is not READY or FAILED, or we don't have analysis.
+    }
+
+    let orderBy: Record<string, unknown> = { createdAt: "desc" };
+    if (sort === "oldest") orderBy = { createdAt: "asc" };
+    else if (sort === "filename") orderBy = { name: "asc" };
+    else if (sort === "status") orderBy = { status: "asc" };
+
+    const [total, items, ready, processing, failed] = await Promise.all([
+      prisma.document.count({ where }),
+      prisma.document.findMany({
+        where,
+        orderBy,
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true, name: true, mimeType: true, sizeBytes: true, status: true,
+          errorCode: true, errorMessage: true, createdAt: true, updatedAt: true,
+          uploadedById: true,
+          _count: { select: { tasks: true } }
+        }
+      }),
+      prisma.document.count({ where: { workspaceId: auth.workspaceId, deletedAt: null, status: "READY" } }),
+      prisma.document.count({ where: { workspaceId: auth.workspaceId, deletedAt: null, status: { in: ["UPLOADED", "EXTRACTING", "OCR_PROCESSING", "ANALYZING"] } } }),
+      prisma.document.count({ where: { workspaceId: auth.workspaceId, deletedAt: null, status: "FAILED" } }),
+    ]);
+
+    // get uploader information
+    const userIds = Array.from(new Set(items.map(i => i.uploadedById)));
+    const users = await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, email: true } });
+    const userMap = new Map(users.map(u => [u.id, u]));
+
+    // get graph inclusion status
+    const docIds = items.map(i => i.id);
+    const graphInclusions = await prisma.knowledgeEntitySource.findMany({ where: { documentId: { in: docIds } }, select: { documentId: true }, distinct: ["documentId"] });
+    const graphDocIds = new Set(graphInclusions.map(g => g.documentId));
+
+    const enrichedItems = items.map(item => {
+      const uploader = userMap.get(item.uploadedById);
+      const isEvidenceOnly = item.errorCode === "EVIDENCE_ONLY";
+      return {
+        id: item.id,
+        name: item.name,
+        mimeType: item.mimeType,
+        sizeBytes: item.sizeBytes,
+        status: item.status,
+        errorCode: item.errorCode,
+        errorMessage: item.errorMessage,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+        uploadedBy: uploader ? { name: uploader.name, email: uploader.email } : null,
+        taskCount: item._count.tasks,
+        analysisMode: isEvidenceOnly ? "evidence-only" : (item.status === "READY" ? "synthesis" : "not-analysed"),
+        graphStatus: graphDocIds.has(item.id) ? "included" : (item.status === "READY" ? "not-built" : (item.status === "FAILED" ? "failed" : "not-applicable"))
+      };
+    });
+
+    ok(res, {
+      items: enrichedItems,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      summary: { total: total, ready, processing, failed }
+    });
+  } catch (error) { next(error); } });
   app.get("/api/v1/documents/:documentId", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const document = await prisma.document.findFirst({ where: { id: String(req.params.documentId), workspaceId: auth.workspaceId, deletedAt: null } }); if (!document) throw new AppError(404, "DOCUMENT_NOT_FOUND", "Document not found."); ok(res, publicDocument(document)); } catch (error) { next(error); } });
   app.get("/api/v1/documents/:documentId/status", requireAuth, async (req, res, next) => { try { const auth = authContext(req); const document = await prisma.document.findFirst({ where: { id: String(req.params.documentId), workspaceId: auth.workspaceId, deletedAt: null }, select: { id: true, status: true, errorCode: true, errorMessage: true, updatedAt: true } }); if (!document) throw new AppError(404, "DOCUMENT_NOT_FOUND", "Document not found."); ok(res, document); } catch (error) { next(error); } });
   app.post("/api/v1/documents/:documentId/analyze", requireAuth, async (req, res, next) => { try {
