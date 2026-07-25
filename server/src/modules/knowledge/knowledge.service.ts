@@ -2,7 +2,7 @@ import { KnowledgeEntityType, PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../../config/prisma.js";
 import { AppError } from "../../shared/http.js";
-import { GeminiProvider, type AIProvider, type DocumentAnalysis } from "../ai/provider.js";
+import { createAIProvider, type AIProvider, type DocumentAnalysis } from "../ai/provider.js";
 
 export const entityTypes = ["PERSON", "ORGANIZATION", "PROJECT", "TASK", "DATE", "TECHNOLOGY", "TOPIC", "LOCATION", "DOCUMENT"] as const;
 export const relationTypes = ["DOCUMENT_MENTIONS_ENTITY", "MENTIONED_IN", "HAS_TASK", "DUE_ON", "ASSIGNED_TO", "RELATED_TO", "USES", "REFERENCES", "RESPONSIBLE_FOR", "USED_BY", "DUE_DATE_FOR", "ENABLES"] as const;
@@ -117,7 +117,7 @@ export function mergeGraphCandidates(graphs: GraphCandidates[]): GraphCandidates
 }
 
 export class KnowledgeGraphService {
-  constructor(private readonly db: PrismaClient = prisma, private readonly ai: AIProvider = new GeminiProvider()) {}
+  constructor(private readonly db: PrismaClient = prisma, private readonly ai: AIProvider = createAIProvider()) {}
 
   async rebuildWorkspace(workspaceId: string) {
     const documents = await this.db.document.findMany({ where: { workspaceId, deletedAt: null }, select: { id: true } });
@@ -232,9 +232,9 @@ export class KnowledgeGraphService {
         const match = ranked.find((item) => item.virtualIndex === citation.chunkIndex);
         return match ? [{ documentId: match.document.id, documentName: match.document.name, chunkIndex: match.chunkIndex, ...(match.pageNumber ? { pageNumber: match.pageNumber } : {}), excerpt: match.content.replace(/\s+/g, " ").slice(0, 220) }] : [];
       });
-      return { ...base, synthesisAvailable: true, answer: answer.answer, citations };
+      return { ...base, synthesisAvailable: true, answer: answer.answer, citations, providerMetadata: answer.providerMetadata ?? this.ai.lastMetadata };
     } catch (error) {
-      if (error instanceof AppError && ["AI_RATE_LIMITED", "AI_NOT_CONFIGURED"].includes(error.code)) return { ...base, synthesisAvailable: false, status: error.code, answer: "The knowledge graph and source evidence are available, but Gemini synthesis is temporarily unavailable.", citations: base.evidence };
+      if (error instanceof AppError && ["AI_RATE_LIMITED", "AI_NOT_CONFIGURED", "AI_PROVIDERS_UNAVAILABLE", "AI_EMPTY_RESPONSE"].includes(error.code)) return { ...base, synthesisAvailable: false, status: error.code, answer: "The knowledge graph and source evidence are available, but AI synthesis is temporarily unavailable.", citations: base.evidence, providerMetadata: { provider: "deterministic" as const, fallbackUsed: true } };
       throw error;
     }
   }

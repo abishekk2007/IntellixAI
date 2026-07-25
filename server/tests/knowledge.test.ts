@@ -122,12 +122,12 @@ describe("knowledge graph", () => {
     expect(db.documentChunk.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ workspaceId }) }));
   });
 
-  it("keeps bounded evidence when Gemini is rate-limited", async () => {
+  it.each(["AI_RATE_LIMITED", "AI_EMPTY_RESPONSE"])("keeps bounded deterministic evidence when synthesis fails with %s", async (code) => {
     const result = await new KnowledgeGraphService(questionDb() as never, ai({
-      answerDocumentQuestion: vi.fn().mockRejectedValue(new AppError(503, "AI_RATE_LIMITED", "AI quota unavailable.")),
+      answerDocumentQuestion: vi.fn().mockRejectedValue(new AppError(503, code, "AI synthesis unavailable.")),
     })).askQuestion(workspaceId, "How does Gemini connect to Intellix?");
 
-    expect(result).toMatchObject({ synthesisAvailable: false, status: "AI_RATE_LIMITED" });
+    expect(result).toMatchObject({ synthesisAvailable: false, status: code, providerMetadata: { provider: "deterministic", fallbackUsed: true } });
     expect(result.citations).toHaveLength(2);
     expect(result.evidence).toHaveLength(2);
   });

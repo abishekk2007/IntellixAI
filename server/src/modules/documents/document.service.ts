@@ -7,7 +7,7 @@ import { z } from "zod";
 import { env } from "../../config/env.js";
 import { prisma } from "../../config/prisma.js";
 import { AppError } from "../../shared/http.js";
-import { GeminiProvider, type AIProvider, type ContextChunk, type DocumentAnalysis } from "../ai/provider.js";
+import { createAIProvider, type AIProvider, type ContextChunk, type DocumentAnalysis } from "../ai/provider.js";
 import { TesseractOCRProvider, type OCRProvider } from "../ocr/ocr.js";
 import { KnowledgeGraphService } from "../knowledge/knowledge.service.js";
 
@@ -108,8 +108,8 @@ export class DocumentProcessor {
       await prisma.$transaction([
         prisma.documentChunk.deleteMany({ where: { documentId: document.id, workspaceId } }),
         prisma.documentChunk.createMany({ data: chunks.map((content, chunkIndex) => ({ documentId: document.id, workspaceId, chunkIndex, content })) }),
-        prisma.document.update({ where: { id: document.id }, data: analysisData(analysis) }),
-        prisma.usageEvent.create({ data: { workspaceId, eventType: "document.analysis" } }),
+        prisma.document.update({ where: { id: document.id }, data: analysisData(analysis, this.ai.lastMetadata?.provider === "deterministic") }),
+        prisma.usageEvent.create({ data: { workspaceId, eventType: "document.analysis", metadata: this.ai.lastMetadata } }),
       ]);
       await new KnowledgeGraphService().rebuildDocument(document.id, workspaceId, analysis).catch(() => undefined);
     } catch (error) {
@@ -120,16 +120,27 @@ export class DocumentProcessor {
   }
 }
 
-function analysisData(analysis: DocumentAnalysis) {
-  return { status: "READY" as const, summary: analysis.summary, keyPoints: analysis.keyPoints, keywords: analysis.keywords, actionItems: analysis.actionItems, importantDates: analysis.importantDates };
+function analysisData(analysis: DocumentAnalysis, evidenceOnly = false) {
+  return { status: "READY" as const, summary: analysis.summary, keyPoints: analysis.keyPoints, keywords: analysis.keywords, actionItems: analysis.actionItems, importantDates: analysis.importantDates, errorCode: evidenceOnly ? "EVIDENCE_ONLY" : null, errorMessage: evidenceOnly ? "Evidence-only mode" : null };
 }
 
-export function createDocumentProcessor() { return new DocumentProcessor(new GeminiProvider(), new TesseractOCRProvider()); }
+export function createDocumentProcessor() { return new DocumentProcessor(createAIProvider(), new TesseractOCRProvider()); }
 
-export async function answerQuestion(documentId: string, workspaceId: string, question: string, ai: AIProvider = new GeminiProvider()) {
+export async function answerQuestion(documentId: string, workspaceId: string, question: string, ai: AIProvider = createAIProvider()) {
   const document = await prisma.document.findFirst({ where: { id: documentId, workspaceId, status: "READY", deletedAt: null }, include: { chunks: { orderBy: { chunkIndex: "asc" } } } });
   if (!document) throw new AppError(404, "DOCUMENT_NOT_READY", "The document is not ready for questions.");
-  return ai.answerDocumentQuestion(question, retrieveRelevantChunks(question, document.chunks));
+  const evidence = retrieveRelevantChunks(question, document.chunks);
+  try { return await ai.answerDocumentQuestion(question, evidence); }
+  catch (error) {
+    if (error instanceof AppError && ["AI_PROVIDERS_UNAVAILABLE", "AI_EMPTY_RESPONSE"].includes(error.code)) {
+      return {
+        answer: "Generative synthesis is temporarily unavailable. Relevant source evidence is provided below.",
+        citations: evidence.map((chunk) => ({ chunkIndex: chunk.chunkIndex, ...(chunk.pageNumber ? { pageNumber: chunk.pageNumber } : {}), excerpt: chunk.content.replace(/\s+/g, " ").slice(0, 220) })),
+        providerMetadata: { provider: "deterministic" as const, fallbackUsed: true },
+      };
+    }
+    throw error;
+  }
 }
 
 export const questionSchema = z.object({ question: z.string().trim().min(2).max(2_000) });

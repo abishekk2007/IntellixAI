@@ -14,13 +14,11 @@ describe("Gemini provider safety", () => {
     expect(operation).toHaveBeenCalledTimes(1);
   });
 
-  it("uses at most one automatic retry when Google supplies a short explicit delay", async () => {
+  it("does not retry even when Google supplies a short explicit delay", async () => {
     const delayed = Object.assign(new Error("quota"), { status: 429, errorDetails: [{ "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "0.01s" }] });
     const operation = vi.fn().mockRejectedValueOnce(delayed).mockResolvedValueOnce("ok");
-    const sleep = vi.fn().mockResolvedValue(undefined);
-    await expect(executeAIRequest(operation, { sleep })).resolves.toBe("ok");
-    expect(sleep).toHaveBeenCalledWith(10);
-    expect(operation).toHaveBeenCalledTimes(2);
+    await expect(executeAIRequest(operation)).rejects.toMatchObject({ code: "AI_RATE_LIMITED" });
+    expect(operation).toHaveBeenCalledTimes(1);
   });
 
   it.each([[401,"AI_PERMISSION_DENIED"],[403,"AI_PERMISSION_DENIED"],[404,"AI_MODEL_NOT_FOUND"]] as const)("maps HTTP %s to %s", (status, code) => {
@@ -40,5 +38,9 @@ describe("Gemini provider safety", () => {
   it("preserves successful structured analysis validation", async () => {
     const analysis = analysisSchema.parse({ summary:"Summary", keyPoints:["Point"], keywords:["keyword"], actionItems:[{title:"Review",priority:"HIGH"}], importantDates:[] });
     await expect(executeAIRequest(async () => analysis)).resolves.toEqual(analysis);
+  });
+
+  it("parses the first valid JSON object from surrounding text", () => {
+    expect(parseModelJson("preface {not json} then {\"value\":\"brace } in a string\"} suffix")).toEqual({ value: "brace } in a string" });
   });
 });
