@@ -1,390 +1,354 @@
 # Intellix AI
 
-> **Where Intelligence Meets Action.**
+“Turn documents into connected knowledge, grounded answers and actionable work.”
 
-Intellix AI is a secure, multi-tenant document-intelligence workspace. It transforms uploaded files into structured insights, grounded answers, user-confirmed tasks, and live workspace statistics.
+Intellix AI is a secure, multi-tenant document intelligence workspace that transforms uploaded files into summaries, tasks, grounded answers and a collaborative multi-document Knowledge Graph.
 
-## Round 1 evaluation status
+--------------------------------------------------
+## A. PROJECT OVERVIEW
+--------------------------------------------------
 
-The core hackathon MVP is implemented and builds successfully. Authentication, Supabase persistence, document upload and extraction, tenant isolation, tasks, and dashboard aggregation have been verified with real API requests.
+Teams and organizations often struggle with fragmented information buried across hundreds of disconnected documents. Finding answers, tracking decisions, and understanding who is responsible for what takes significant manual effort. 
 
-Gemini integration is implemented behind a provider abstraction, but a live Gemini analysis and Q&A demonstration still requires a valid `GEMINI_API_KEY`. Without a key, the application deliberately stores `FAILED / AI_NOT_CONFIGURED` instead of crashing or leaving a document stuck.
+Intellix solves this by creating one intelligent workspace. When you upload a document, Intellix doesn't just store it—it reads it, summarizes it, extracts action items and important dates, and automatically connects the insights into a workspace-wide Knowledge Graph. This provides immense value for students, teams, startups, and enterprises by converting passive text into an interactive, interconnected, and actionable network of knowledge.
 
-| Area | Status | Evaluation note |
-|---|---|---|
-| Responsive Next.js interface | Complete | Landing, authentication, dashboard, documents, tasks, and workspace pages |
-| Registration and login | Complete and verified | Creates User, Workspace, and OWNER Membership |
-| JWT and refresh rotation | Complete and verified | Short-lived access JWT and opaque, hashed, rotating refresh session |
-| Supabase PostgreSQL | Complete and verified | Prisma migration applied; persisted data survives API restart |
-| Tenant authorization | Complete and verified | Membership checks and workspace-scoped queries |
-| Document upload | Complete and verified | PDF, TXT, PNG, JPG, and JPEG with size, MIME, signature, and filename validation |
-| Text extraction | Complete | TXT and PDF extraction |
-| Conditional OCR | Implemented | Tesseract for images and scanned PDFs; live OCR demo still recommended |
-| Gemini analysis | Implemented; key required | Structured summary, points, keywords, actions, and dates validated with Zod |
-| Document Q&A | Implemented; key required | Keyword-ranked chunks with citation index, optional page, and excerpt |
-| Confirmed task creation | Complete | Tasks are created only when `confirmed` strictly equals `true` |
-| Dashboard aggregation | Complete and verified | Real tenant-scoped document and task statistics |
-| Automated quality suite | Passing | 19 tests, type checks, lint, API build, and web build |
-| Production deployment | Under development | Local storage and in-process jobs remain hackathon adapters |
+--------------------------------------------------
+## B. CORE FEATURES
+--------------------------------------------------
 
-## Problem and objective
+| Feature | Description |
+| :--- | :--- |
+| **Secure Workspace Authentication** | Multi-tenant isolation with secure JWT-based sessions. |
+| **Multi-tenant Supabase Persistence** | Reliable relational data storage using PostgreSQL. |
+| **TXT, PDF and Image Uploads** | Supports various file formats for comprehensive knowledge extraction. |
+| **Text Extraction and OCR** | Automated text parsing and optical character recognition (OCR) via Tesseract. |
+| **Gemini Primary AI** | Fast, high-quality document intelligence via Google Gemini. |
+| **OpenRouter Backup Provider** | Automatic fallback ensuring high availability. |
+| **Deterministic Evidence-only Fallback** | AI-free source extraction when external providers are unavailable. |
+| **Structured Summaries** | Automatic generation of concise document overviews. |
+| **Key Points and Keywords** | Highlights essential concepts for quick scanning. |
+| **Important Date Extraction** | Identifies critical deadlines and milestones. |
+| **Action-item Extraction** | Automatically lists actionable work found in documents. |
+| **Confirmed Task Creation** | Convert document action items into trackable workspace tasks. |
+| **Grounded Document Q&A** | Ask questions against your documents with source-grounded answers. |
+| **Collaborative Knowledge Graph** | Visually explore connections across all documents in a workspace. |
+| **Cross-document Entity Search** | Find people, projects, and topics across your entire knowledge base. |
+| **Relationship Exploration** | Discover how entities connect (e.g. "Mentions", "Assigned to"). |
+| **Source Excerpts and Citations** | Every node and answer is backed by exact document excerpts. |
+| **Dashboard Analytics** | Overview of workspace activity, storage, and entity counts. |
+| **Responsive UI** | Seamless experience across mobile and desktop. |
+| **Safe Quota & Failure Handling** | System gracefully degrades to Evidence-only mode during API limits. |
 
-Important information is often buried in reports, notes, scans, and images. Intellix provides one workflow to:
+**AI Synthesis Mode vs Evidence-only Mode**
+Intellix intelligently adapts to provider availability. When AI is available, it provides rich synthesis and summarization. When external APIs fail or hit rate limits, it falls back to **Evidence-only Mode**, extracting raw connections and relationships directly from the text deterministically. The platform remains functional even when external AI providers are unavailable!
 
-1. securely upload a document;
-2. extract or OCR its text;
-3. generate structured, source-based intelligence;
-4. ask questions using relevant document chunks;
-5. approve selected action items before task creation; and
-6. track persisted results from a workspace dashboard.
+--------------------------------------------------
+## C. KNOWLEDGE GRAPH FEATURE
+--------------------------------------------------
 
-The product keeps human confirmation and workspace ownership at the center of the workflow.
+### Collaborative Multi-Document Knowledge Graph
 
-## Main workflow
+The Knowledge Graph is the heart of Intellix. It connects scattered insights into a unified visual map.
+- **Entities**: Discovers people, documents, tasks, dates, technologies, projects, and topics.
+- **Relationships**: Automatically infers links such as *Mentions*, *Assigned to*, *Due on*, *Uses*, and *Related to*.
+- **Cross-document Connections**: Finds links between entities even if they appear in completely separate documents.
+- **Linked Source Evidence**: Every connection retains a link back to the exact chunk and document where it was found.
+- **Entity Detail Exploration**: Click any node to instantly view all incoming and outgoing connections.
+- **Workspace Graph Rebuild**: Manually trigger graph rebuilds to incorporate newly added documents or tasks.
+- **Evidence-grounded Questions**: Ask questions that traverse multiple documents with exact citations.
 
-```text
-Register or log in
-        ↓
-Upload PDF, TXT, PNG, JPG, or JPEG
-        ↓
-Validate → safely store → extract text → OCR when required
-        ↓
-Gemini structured analysis with Zod validation
-        ↓
-Summary + key points + keywords + actions + important dates
-        ↓
-Keyword-ranked document Q&A with source citations
-        ↓
-User selects and confirms action items
-        ↓
-Persist tasks and update dashboard statistics
+**Example Insight Flow:**
+Abishek → Assigned to → Prepare dashboard
+Intellix → Uses → Supabase
+Final demo → Due on → Tomorrow
+
+--------------------------------------------------
+## D. WORKFLOW DIAGRAM
+--------------------------------------------------
+
+```mermaid
+flowchart TD
+    A[User] --> B[Register/Login]
+    B --> C[Upload Document]
+    C --> D[Extraction / OCR]
+    D --> E{AI Processing}
+    E -->|Success| F[Gemini Primary]
+    E -->|Failure| G[OpenRouter Fallback]
+    G -->|Unavailable/Invalid| H[Deterministic Evidence Fallback]
+    F --> I[Structured Analysis]
+    G --> I
+    H --> I
+    I --> J[Action Items -> Tasks]
+    I --> K[Knowledge Graph]
+    K --> L[Dashboard and Q&A]
 ```
 
-## Features completed
+--------------------------------------------------
+## E. AI PROVIDER ARCHITECTURE
+--------------------------------------------------
 
-### Frontend
+```mermaid
+flowchart TD
+    A[Gemini Primary] -->|Eligible Failure| B[OpenRouter Backup]
+    B -->|Unavailable or Invalid Response| C[Deterministic Evidence-only Mode]
+    
+    A -.->|Validation| D[Persistence]
+    B -.->|Validation| D
+    C -.->|Validation| D
+```
 
-- Responsive Next.js workspace and landing experience
-- Shared authenticated application shell with sidebar, header, mobile drawer, user controls, and route-aware navigation
-- Reusable cards, page headers, badges, loading states, error states, and empty states
-- Responsive breakpoints verified for desktop, tablet, and mobile layouts
-- Register and login integration
-- Zustand authentication state
-- Central API client with `credentials: "include"`
-- One-time access-token refresh and retry protection
-- Document upload, list, detail, status polling, analysis display, and retry handling
-- Polling stops when a document reaches `READY` or `FAILED`
-- Document question form and citation display
-- Explicit action-item selection and confirmation
-- Persisted task list and status updates
-- Live dashboard summary integration
-- Loading, empty, processing, and safe error states
+**Resilience Features:**
+- No uncontrolled retries (prevents retry storms).
+- Safe error mapping to appropriate internal status codes.
+- Strict Zod validation before database persistence.
+- Output is always source-grounded (no hallucinated external facts).
+- Hidden AI reasoning is never exposed to the user.
+- Document evidence and chunks are always preserved regardless of AI status.
 
-### Backend and security
+--------------------------------------------------
+## F. SYSTEM ARCHITECTURE
+--------------------------------------------------
 
-- Express 5 API under `/api/v1`
-- Consistent `{ data, error, meta }` response envelopes
-- Database-aware health endpoint
-- Request IDs, Helmet, scoped credentialed CORS, and Pino redaction
-- Authentication and upload rate limits
-- Zod request and environment validation
-- Bcrypt password hashing with cost 12
-- Short-lived JWT access tokens
-- Opaque refresh tokens stored only as HMAC-SHA256 hashes
-- Atomic refresh rotation and logout revocation
-- HTTP-only refresh cookie with production-aware security settings
-- Membership verification on protected routes
-- Workspace scoping on documents, tasks, dashboard data, chunks, and audit records
-- Soft-delete filtering for documents
-- Safe centralized errors without stack traces, credentials, provider errors, or file paths
+```mermaid
+flowchart LR
+    subgraph Frontend
+        NextJS[Next.js + React Query + Zustand]
+    end
+    
+    subgraph Backend
+        Express[Express + TypeScript]
+    end
+    
+    subgraph Services
+        DB[(Supabase PostgreSQL)]
+        Prisma[Prisma ORM]
+        AI[Gemini / OpenRouter / Fallback]
+        OCR[Tesseract & PDF Extract]
+        Storage[Local Hackathon Adapter]
+    end
+    
+    Frontend <-->|REST API / JSON| Express
+    Express <--> Prisma
+    Prisma <--> DB
+    Express <--> AI
+    Express <--> OCR
+    Express <--> Storage
+```
 
-### Document intelligence
-
-- Multipart upload field: `file`
-- Maximum upload size controlled by `MAX_UPLOAD_BYTES`
-- Extension, MIME, magic-byte/signature, empty-file, and size validation
-- Sanitized display names and server-generated storage keys
-- Path-traversal protection
-- TXT decoding and PDF extraction
-- Conditional Tesseract OCR for images and low-text scanned PDFs
-- Processing states: `UPLOADED`, `EXTRACTING`, `OCR_PROCESSING`, `ANALYZING`, `READY`, `FAILED`
-- Gemini behind `AIProvider`
-- OCR behind `OCRProvider`
-- Prompt-injection protection that treats uploaded text as untrusted data
-- Bounded AI input, timeout handling, transient retry policy, fenced-JSON parsing, and Zod validation
-- Persisted document chunks and keyword-overlap retrieval
-- Safe missing-Gemini state: `FAILED / AI_NOT_CONFIGURED`
-
-### Tasks and dashboard
-
-- Task create, list, update, and delete endpoints
-- Action items never become tasks without explicit confirmation
-- Transactional action-item conversion
-- Source-document relationship retained on generated tasks
-- Practical duplicate-submission protection
-- Tenant-scoped totals for ready, processing, and failed documents
-- Tenant-scoped totals for pending and completed tasks
-- Recent persisted documents and tasks
-
-## Technology stack
+--------------------------------------------------
+## G. TECHNOLOGY STACK
+--------------------------------------------------
 
 | Layer | Technology |
-|---|---|
-| Frontend | Next.js 15, React 19, TypeScript |
-| Client data | TanStack React Query, Zustand |
-| Backend | Express 5, TypeScript |
-| Database | Supabase managed PostgreSQL |
-| ORM and migrations | Prisma 6.19 |
-| Authentication | JWT, opaque refresh tokens, bcrypt |
-| AI | Google Gemini via `@google/generative-ai` |
-| OCR | Tesseract.js |
-| PDF extraction | `pdf-parse` |
-| Validation | Zod and `file-type` |
-| Security and logging | Helmet, CORS, rate limiting, Pino |
-| Testing | Vitest and Supertest |
-| Package manager | pnpm |
+| :--- | :--- |
+| **Frontend** | Next.js, React, TypeScript, React Query, Zustand, Vanilla CSS |
+| **Backend** | Node.js, Express, TypeScript |
+| **Database** | Supabase PostgreSQL |
+| **ORM** | Prisma |
+| **Authentication** | JWT with HttpOnly cookies, bcrypt |
+| **AI Providers** | Google Gemini, OpenRouter |
+| **OCR** | Tesseract.js, pdf-parse |
+| **Testing** | Vitest, React Testing Library |
+| **Styling** | Responsive Vanilla CSS |
+| **Deployment Readiness**| Full static/dynamic export capability |
 
-## Architecture
-
-```text
-Next.js + React Query + Zustand
-              ↓ HTTPS / JSON / multipart
-Express API + JWT + Membership authorization
-              ↓ shared Prisma Client
-Supavisor transaction pooler (DATABASE_URL)
-              ↓
-Supabase PostgreSQL
-
-Prisma migration commands
-              ↓ direct/session connection (DIRECT_URL)
-Supabase PostgreSQL
-```
-
-Supabase is used only as managed PostgreSQL. The application does not use Supabase Auth, Storage, Realtime, browser database access, or automatically generated RLS policies. Prisma remains the only ORM and migration system.
-
-## Project structure
+--------------------------------------------------
+## H. PROJECT STRUCTURE
+--------------------------------------------------
 
 ```text
-app/                    Next.js routes and screens
-components/             Reusable UI components
-lib/                    API client and authentication state
-server/src/             Express application and domain services
-server/tests/           API and service tests
-prisma/schema.prisma    Database schema
-prisma/migrations/      Version-controlled migration SQL
-docs/                   Detailed technical documentation
+app/          # Next.js frontend routes and pages
+components/   # Reusable React UI components
+lib/          # Frontend utilities, API clients, store
+server/       # Express backend, modular services, API routes
+prisma/       # Database schema and migrations
+docs/         # Screenshots and project documentation
+tests/        # Vitest integration and unit tests
 ```
 
-## Environment setup
+- **app/**: The Next.js frontend presentation layer and routing.
+- **components/**: Modular UI elements.
+- **lib/**: Shared frontend logic and hooks.
+- **server/**: The backend API engine processing intelligence.
+- **prisma/**: Data structure and migrations.
+- **docs/**: Project presentation resources.
+- **tests/**: Validates functionality, isolation, and fallback strategies.
 
-Copy the safe template and replace placeholders locally:
+--------------------------------------------------
+## I. API OVERVIEW
+--------------------------------------------------
 
-```bash
-cp .env.example .env
-```
-
-Windows PowerShell:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-Required configuration:
-
-| Variable | Purpose |
-|---|---|
-| `DATABASE_URL` | Runtime Supavisor transaction connection |
-| `DIRECT_URL` | Direct/session connection for Prisma administration |
-| `JWT_ACCESS_SECRET` | Access-token signing secret, minimum 32 characters |
-| `JWT_REFRESH_SECRET` | Refresh-token HMAC secret, minimum 32 characters |
-| `GEMINI_API_KEY` | Optional for startup; required for AI analysis and Q&A |
-| `GEMINI_MODEL` | Configurable Gemini model name |
-| `FRONTEND_URLS` | Comma-separated exact browser origins; development also permits localhost ports 3000 and 3001 |
-| `NEXT_PUBLIC_API_URL` | Public Express API base URL |
-| `LOCAL_UPLOAD_DIR` | Local hackathon upload directory |
-| `MAX_UPLOAD_BYTES` | Maximum accepted upload size |
-| `PORT` | API port, defaults to `4000` |
-
-Never commit `.env`. Only `NEXT_PUBLIC_API_URL` is exposed to browser code.
-
-## Local installation and database setup
-
-Prerequisites: Node.js, pnpm, and a Supabase development project.
-
-```bash
-pnpm install
-pnpm prisma:format
-pnpm prisma:generate
-pnpm prisma:validate
-pnpm prisma:migrate:deploy
-```
-
-Runtime `DATABASE_URL` should use Supavisor transaction mode on port `6543` with:
-
-```text
-pgbouncer=true&connection_limit=1&sslmode=require
-```
-
-`DIRECT_URL` should use the direct or Supavisor session connection on port `5432` with `sslmode=require`. Never run destructive reset commands against the shared Supabase project.
-
-## Start the application
-
-Use two terminals:
-
-```bash
-# Terminal 1 — frontend
-pnpm dev
-
-# Terminal 2 — backend
-pnpm dev:api
-```
-
-- Frontend: `http://localhost:3000`
-- Backend: `http://localhost:4000`
-- Health: `http://localhost:4000/api/v1/health`
-
-Expected health response:
-
-```json
-{
-  "data": {
-    "status": "ok",
-    "database": "connected"
-  },
-  "error": null,
-  "meta": {
-    "requestId": "generated-request-id"
-  }
-}
-```
-
-## API overview
-
-### Authentication
-
+**Authentication:**
 - `POST /api/v1/auth/register`
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/refresh`
 - `POST /api/v1/auth/logout`
 - `GET /api/v1/auth/me`
 
-### Documents
-
+**Documents:**
 - `POST /api/v1/documents`
 - `GET /api/v1/documents`
-- `GET /api/v1/documents/:documentId`
-- `DELETE /api/v1/documents/:documentId`
-- `GET /api/v1/documents/:documentId/status`
-- `POST /api/v1/documents/:documentId/analyze`
-- `POST /api/v1/documents/:documentId/questions`
-- `POST /api/v1/documents/:documentId/action-items/tasks`
+- `GET /api/v1/documents/:id`
+- `POST /api/v1/documents/:id/retry`
+- `DELETE /api/v1/documents/:id`
 
-### Tasks and dashboard
-
+**Tasks:**
 - `POST /api/v1/tasks`
 - `GET /api/v1/tasks`
-- `PATCH /api/v1/tasks/:taskId`
-- `DELETE /api/v1/tasks/:taskId`
+- `PATCH /api/v1/tasks/:id`
+- `DELETE /api/v1/tasks/:id`
+
+**Dashboard:**
 - `GET /api/v1/dashboard/summary`
 
-See [API documentation](docs/API.md) for behavior and response conventions.
+**Knowledge Graph:**
+- `GET /api/v1/knowledge-graph`
+- `GET /api/v1/knowledge-graph/search`
+- `GET /api/v1/knowledge-graph/entities/:entityId`
+- `POST /api/v1/knowledge-graph/questions`
+- `POST /api/v1/knowledge-graph/rebuild`
+- `POST /api/v1/documents/:documentId/knowledge-graph/rebuild`
 
-## Testing and verified results
+--------------------------------------------------
+## J. LOCAL SETUP
+--------------------------------------------------
 
+**Requirements:**
+- Node.js
+- pnpm
+- PostgreSQL / Supabase project
+
+**Commands:**
 ```bash
 pnpm install
-pnpm prisma:format
 pnpm prisma:generate
-pnpm prisma:validate
-pnpm typecheck
-pnpm lint
-pnpm test -- --run
-pnpm build:api
-pnpm build
+pnpm prisma:migrate:deploy
+pnpm dev:api
+pnpm exec next dev --port 3003
 ```
 
-Latest Round 1 verification:
+**Local URLs:**
+- Frontend: `http://localhost:3003`
+- Backend: `http://localhost:4000`
+- Health: `http://localhost:4000/api/v1/health`
 
-- Prisma formatting, generation, and schema validation: passed
-- Frontend and backend type checks: passed
-- ESLint: passed
-- Automated tests: **19/19 passed**
-- Express production build: passed
-- Next.js production build: passed
-- Supabase migration status: schema up to date
-- Live registration, current user, refresh, logout, upload, task, dashboard, tenant-isolation, and restart-persistence checks: passed
-- Non-failing warning: Next.js ESLint plugin is not yet configured
+**Environment Configuration (`.env`):**
+Create a `.env` file at the root. Use placeholders for sensitive keys:
+```env
+DATABASE_URL=""
+DIRECT_URL=""
+JWT_ACCESS_SECRET=""
+JWT_REFRESH_SECRET=""
+GEMINI_API_KEY=""
+GEMINI_MODEL="gemini-2.0-flash"
+OPENROUTER_API_KEY=""
+OPENROUTER_MODEL="openrouter/free"
+FRONTEND_URL="http://localhost:3003"
+NEXT_PUBLIC_API_URL="http://localhost:4000/api/v1"
+```
 
-## Round 1 demo procedure
+--------------------------------------------------
+## K. DEMO FLOW
+--------------------------------------------------
 
-1. Configure `.env`, including a valid Gemini key for the complete AI demonstration.
-2. Start the frontend and backend.
-3. Open the health endpoint and confirm `database: "connected"`.
-4. Register a new user and enter the workspace.
-5. Upload a short TXT or PDF document.
-6. Watch the processing state progress to `READY`.
-7. Review the summary, key points, keywords, important dates, and action items.
-8. Ask a question whose answer appears clearly in the document.
-9. Show the returned chunk citation and excerpt.
-10. Select one or more action items and explicitly confirm task creation.
-11. Open Tasks and update a task status.
-12. Open the dashboard and show the persisted totals.
-13. Restart the API and confirm the data remains available.
+1. **Register workspace**: Create a secure tenant workspace.
+2. **Upload document**: Upload text, PDF, or images.
+3. **Show summary, keywords, dates and action items**: Review auto-generated intelligence.
+4. **Convert an action item to a task**: Click to turn an extracted action item into a tracked task.
+5. **Open dashboard**: View updated workspace metrics and total processed documents.
+6. **Build Knowledge Graph**: Manually rebuild the workspace graph from new insights.
+7. **Select an entity**: Search or click a node in the graph to open detail view.
+8. **Show linked documents and evidence**: View connected tasks, dates, and raw text evidence.
+9. **Ask a cross-document question**: Ask a grounded question and get a cited answer.
+10. **Explain Evidence-only resilience**: Demonstrate how the graph and answers continue to work natively even if APIs are restricted.
 
-If Gemini is not configured, demonstrate the safe `AI_NOT_CONFIGURED` failure and retry behavior, but do not claim the live AI workflow is complete.
+--------------------------------------------------
+## L. SECURITY
+--------------------------------------------------
 
-## Under development
+- **Passwords**: Securely hashed with bcrypt.
+- **Sessions**: Short-lived JWT access tokens with rotating refresh tokens (HttpOnly cookies).
+- **Isolation**: Workspace isolation enforced at the API layer.
+- **Uploads**: Strict filename sanitization and MIME-type validation.
+- **Rate Limiting**: Protects against abuse and uncontrolled API consumption.
+- **Secret Isolation**: Provider keys are handled purely backend-side; no provider keys sent to the frontend.
+- **Validation**: End-to-end Zod validation blocks invalid payloads and no raw AI errors exposed.
 
-### Round 1 follow-up
+--------------------------------------------------
+## M. TESTING AND QUALITY
+--------------------------------------------------
 
-- Add and verify the real Gemini key in the evaluation environment
-- Run a live OCR demonstration with an image and scanned PDF
-- Configure the Next.js ESLint plugin to remove the current build warning
-- Finalize teammate names, Git repository metadata, remote, and clean commit groups
-- Add the selected project license
+- **Total tests passed**: 108 passed
+- **Typecheck**: Success (0 errors)
+- **Lint**: Success (0 errors)
+- **API Build**: Success
+- **Frontend Build**: Success (Optimized production build generated)
+- **Coverage**: Comprehensive tests covering knowledge UI, auth, provider fallback, and tenant-isolation.
 
-### Production roadmap
+--------------------------------------------------
+## N. HACKATHON INNOVATION
+--------------------------------------------------
 
-- Replace local uploads with durable object storage
-- Replace in-process jobs with a durable queue and worker
-- Add shared rate-limit storage for multiple API replicas
-- Add multi-pass synthesis for very large documents
-- Improve chunk/page metadata during PDF extraction and OCR
-- Add broader integration tests against an isolated test database
-- Add CI for install, Prisma validation, tests, lint, and builds
-- Deploy preview and production environments with managed secrets
-- Evaluate defense-in-depth database RLS without weakening backend Membership checks
+What makes Intellix unique:
+- **AI is not a single point of failure**: The system runs gracefully when APIs fail.
+- **Evidence survives provider outages**: Deterministic fallback prevents catastrophic data loss.
+- **Grounded context**: Tasks, dates, and documents become graph connections.
+- **Multi-document discovery**: Navigate insights far beyond standard keyword searches.
+- **Reduced Hallucinations**: Grounded citations map every AI claim to a real document excerpt.
+- **Workspace-level reasoning**: Understand complex questions across multiple silos.
+- **Safe deterministic fallback**: Evidence extraction guarantees continuous document operation.
 
-## Known hackathon limitations
+--------------------------------------------------
+## O. LIMITATIONS AND FUTURE SCOPE
+--------------------------------------------------
 
-- Local file storage is suitable for the current single-instance demo, not horizontal scaling.
-- In-process document jobs are not durable across restarts.
-- OCR for scanned PDFs is limited to the first 30 rendered pages.
-- Long Gemini input is bounded to protect latency and cost.
-- Retrieval uses keyword overlap, not vector search; this project does not describe it as vector RAG.
-- Access JWTs are stored in session storage; refresh tokens remain HTTP-only cookies.
-- Supabase Auth, Supabase Storage, billing, OAuth, Redis, BullMQ, calendar, email, voice, and admin features are intentionally outside the Round 1 MVP.
+**Current Limitations:**
+- Local file storage is used.
+- In-process jobs (blocking execution on large files).
+- Deterministic mode is extractive, not generative.
+- Free-provider availability may change.
+- Scanned PDF limits based on OCR capacity.
+- Local development CORS configuration constraints.
 
-## Documentation
+**Future Scope:**
+- Object storage integration.
+- BullMQ / background workers for async processing.
+- Vector retrieval for high-scale RAG.
+- Interactive Graph Visualization Canvas.
+- Collaboration and sharing features.
+- Analytics history.
+- Deployment and hosting.
+- Push notifications.
+- Role-based permissions.
 
-- [Project documentation](PROJECT_DOCUMENTATION.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [API](docs/API.md)
-- [Backend](docs/BACKEND.md)
-- [Frontend](docs/FRONTEND.md)
-- [Database](docs/DATABASE.md)
-- [Deployment](docs/DEPLOYMENT.md)
-- [Security review](security_best_practices_report.md)
-- [Changelog](CHANGELOG.md)
+--------------------------------------------------
+## P. TEAM CONTRIBUTIONS
+--------------------------------------------------
 
-## Contributors
+- **Abishek**: Frontend and responsive UI, Dashboard, Authentication screens, Knowledge Graph explorer.
+- **Ajaykumar**: Supabase and Prisma, Authentication backend, Runtime configuration and API stability.
+- **Aakash**: Gemini/OpenRouter integration, OCR and document processing, Deterministic fallback, Knowledge Graph backend and testing.
 
-- Teammate 1 Name — Frontend and UI
-- Teammate 2 Name — Backend, authentication and database
-- Teammate 3 Name — AI, OCR, document processing and tasks
+--------------------------------------------------
+## Q. SCREENSHOTS
+--------------------------------------------------
 
-Replace these placeholders with the final team names before submission.
+![Dashboard](docs/screenshots/dashboard.png)
+![Documents](docs/screenshots/documents.png)
+![Knowledge Graph](docs/screenshots/knowledge-graph.png)
+![Tasks](docs/screenshots/tasks.png)
+![Mobile Layout](docs/screenshots/mobile-layout.png)
 
-## License status
+--------------------------------------------------
+## R. STATUS
+--------------------------------------------------
 
-No open-source license has been selected yet. Add a `LICENSE` file before distributing Intellix AI under an open-source license.
+- **Authentication**: Working
+- **Database**: Working
+- **Document upload**: Working
+- **Evidence-only fallback**: Working
+- **Tasks**: Working
+- **Knowledge Graph**: Working
+- **Responsive UI**: Working
+- **Automated tests**: Passing
+- **External Gemini/OpenRouter availability**: Environment dependent
