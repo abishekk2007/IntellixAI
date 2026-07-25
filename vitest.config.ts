@@ -1,2 +1,13 @@
 import { defineConfig } from "vitest/config";
-export default defineConfig({ test:{ environment:"node", setupFiles:["./server/tests/setup.ts"], include:["server/tests/**/*.test.ts"], clearMocks:true } });
+import react from "@vitejs/plugin-react";
+import path from "path";
+
+export default defineConfig({ 
+  plugins: [react()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./")
+    }
+  },
+  test:{ environment:"node", setupFiles:["./server/tests/setup.ts"], include:["server/tests/**/*.test.{ts,tsx}"], clearMocks:true } 
+});
