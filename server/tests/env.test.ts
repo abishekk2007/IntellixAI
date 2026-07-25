@@ -38,4 +38,16 @@ describe("database environment validation", () => {
     expect(readEnv(base).FRONTEND_URLS).toEqual(["https://intellix.example"]);
     expect(() => readEnv({ ...base, FRONTEND_URL: undefined, FRONTEND_URLS: "https://app.intellix.test/path" })).toThrow("FRONTEND_URLS");
   });
+
+  it("merges the active development frontend origin with configured origins", () => {
+    const parsed = readEnv({ ...base, NODE_ENV: "development", FRONTEND_URL: "http://localhost:3003", FRONTEND_URLS: "http://localhost:3000,http://localhost:3001" });
+    expect(parsed.FRONTEND_URLS).toContain("http://localhost:3003");
+  });
+
+  it("treats empty provider keys as unconfigured and defaults the OpenRouter model", () => {
+    const parsed = readEnv({ ...base, GEMINI_API_KEY: "", OPENROUTER_API_KEY: "", OPENROUTER_MODEL: undefined });
+    expect(parsed.GEMINI_API_KEY).toBeUndefined();
+    expect(parsed.OPENROUTER_API_KEY).toBeUndefined();
+    expect(parsed.OPENROUTER_MODEL).toBe("openrouter/free");
+  });
 });

@@ -13,7 +13,7 @@ const postgresUrl = z.string().min(1).superRefine((value, context) => {
 });
 
 const obviousPlaceholder = /(placeholder|project[_-]?ref|your[_-]?password|replace|example\.com|region\.pooler|\[.*\]|<.*>)/i;
-const developmentFrontendOrigins = ["http://localhost:3000", "http://localhost:3001"];
+const developmentFrontendOrigins = ["http://localhost:3000", "http://localhost:3001", "http://localhost:3003"];
 
 const originList = z.string().transform((value, context) => {
   const origins = value.split(",").map((origin) => origin.trim()).filter(Boolean);
@@ -51,8 +51,10 @@ const schema = z.object({
   JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
   JWT_REFRESH_SECRET: z.string().min(32),
   JWT_REFRESH_EXPIRES_IN_DAYS: z.coerce.number().int().positive().default(30),
-  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_API_KEY: z.preprocess((value) => value === "" ? undefined : value, z.string().optional()),
   GEMINI_MODEL: z.string().default("gemini-2.0-flash"),
+  OPENROUTER_API_KEY: z.preprocess((value) => value === "" ? undefined : value, z.string().optional()),
+  OPENROUTER_MODEL: z.string().min(1).default("openrouter/free"),
   FRONTEND_URL: singleOrigin.optional(),
   FRONTEND_URLS: originList.optional(),
   NEXT_PUBLIC_API_URL: z.string().url().default("http://localhost:4000/api/v1"),
@@ -74,7 +76,7 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
     if (placeholderFields.length) throw new Error(`Invalid environment configuration: ${placeholderFields.join(", ")}`);
     if (!result.data.FRONTEND_URLS && !result.data.FRONTEND_URL) throw new Error("Invalid environment configuration: FRONTEND_URLS");
   }
-  const configuredOrigins = result.data.FRONTEND_URLS ?? (result.data.FRONTEND_URL ? [result.data.FRONTEND_URL] : []);
+  const configuredOrigins = [...(result.data.FRONTEND_URLS ?? []), ...(result.data.FRONTEND_URL ? [result.data.FRONTEND_URL] : [])];
   const allowedOrigins = result.data.NODE_ENV === "production"
     ? configuredOrigins
     : [...new Set([...developmentFrontendOrigins, ...configuredOrigins])];
